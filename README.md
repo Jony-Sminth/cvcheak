@@ -1,0 +1,22 @@
+```
+- project_root/
+    - data/
+        - train/           # 训练数据
+        - validation/         # 验证数据
+        - test/            # 测试数据
+    - models/
+        - faster_rcnn_model.py    # 模型定义或加载脚本
+    - utils/
+        - data_preprocessing.py   # 数据预处理函数
+        - evaluation.py       # 评估函数
+        - config.py         # 配置参数
+        - utils.py         # 辅助函数
+    - output/
+        - results.json        # 最终提交的结果文件
+    - notebooks/
+        - exploration.ipynb      # 数据探索与初步分析
+    - main.py               # 主入口脚本
+    - train.py               # 训练脚本
+    - predict.py               # 预测脚本
+    - requirements.txt          # 项目所需库
+```
