@@ -4,5 +4,6 @@
 *.gif
 *.json
 *.csv
-*.txt
 *.log
+*.pyc
+*.pt

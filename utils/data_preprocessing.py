@@ -1,21 +1,25 @@
 import os
 import cv2
 import json
-import albumentations as A
 import numpy as np
+import torch
 from tqdm import tqdm
+from torchvision import transforms
+from PIL import Image
 
 class DataPreprocessing:
     def __init__(self, image_dir, label_path):
         self.image_dir = image_dir  # 图像文件夹
         self.label_path = label_path  # 标签文件
-        self.transform = A.Compose([
-            A.HorizontalFlip(p=0.5),
-            A.RandomCrop(height=256, width=256, p=0.5),
-            A.Rotate(limit=10, p=0.3),
-            A.Resize(height=512, width=512, p=1.0),
-            A.Normalize(mean=(0.5, 0.5, 0.5), std=(0.5, 0.5, 0.5))
+
+        # 使用 torchvision.transforms 进行图像变换，调整图像尺寸并转换为张量
+        self.transform = transforms.Compose([
+            transforms.Resize((512, 512)),  # 将所有图像大小调整为 512x512
+            transforms.ToTensor(),
+            transforms.Normalize(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5])
         ])
+        
+        # 加载标签文件
         self.labels = self._load_labels()
 
     def _load_labels(self):
@@ -25,13 +29,12 @@ class DataPreprocessing:
         return labels
 
     def load_image(self, image_id):
-        # 加载图像
+        # 加载图像，使用 PIL 读取，并保持 RGB 格式
         image_path = os.path.join(self.image_dir, image_id)
-        image = cv2.imread(image_path)
-        if image is None:
+        if not os.path.exists(image_path):
             raise FileNotFoundError(f"Image {image_id} not found in directory {self.image_dir}")
-        # OpenCV 默认加载的是 BGR 格式，将其转换为 RGB 格式
-        return cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+        image = Image.open(image_path).convert("RGB")
+        return image
 
     def preprocess_image(self, image_id):
         # 加载图像
@@ -45,15 +48,13 @@ class DataPreprocessing:
                 break
 
         # 为了让模型了解篡改的区域，我们为这些区域创建一个掩膜
-        mask = np.zeros(image.shape[:2], dtype=np.uint8)
+        mask = np.zeros((image.size[1], image.size[0]), dtype=np.uint8)  # mask 的形状为 (height, width)
         for region in regions:
             x1, y1, x2, y2 = map(int, region)
             mask[y1:y2, x1:x2] = 1
 
-        # 使用数据增强库进行数据增强
-        augmented = self.transform(image=image, mask=mask)
-        image = augmented['image']
-        mask = augmented['mask']
+        # 使用 torchvision.transforms 进行图像增强和预处理
+        image = self.transform(image)  # 转换为张量，并标准化
 
         return image, mask
 
@@ -69,11 +70,31 @@ class DataPreprocessing:
             try:
                 image, mask = self.preprocess_image(image_id)
                 
-                # 保存处理后的图像
-                image_save_path = os.path.join(save_dir, image_id)
-                mask_save_path = os.path.join(save_dir, f"mask_{image_id}")
+                # 保存处理后的图像和掩膜
+                image_save_path = os.path.join(save_dir, f"{image_id}.pt")  # 保存为 PyTorch 的张量格式
+                mask_save_path = os.path.join(save_dir, f"mask_{image_id}.png")
 
-                cv2.imwrite(image_save_path, cv2.cvtColor(image, cv2.COLOR_RGB2BGR))
-                cv2.imwrite(mask_save_path, mask * 255)  # 保存为单通道的掩膜图像
+                torch.save(image, image_save_path)  # 保存图像为 PyTorch 的张量文件
+                cv2.imwrite(mask_save_path, mask * 255)  # 保存掩膜为单通道的 PNG 图像
             except FileNotFoundError as e:
                 print(e)
+
+# 创建数据预处理对象并生成数据集
+if __name__ == "__main__":
+    # 训练集处理
+    train_image_dir = 'data/train/images/'
+    train_label_path = 'data/train/label_train.json'
+    train_save_dir = 'data/preprocessed_train/'
+
+    train_preprocessor = DataPreprocessing(image_dir=train_image_dir, label_path=train_label_path)
+    train_preprocessor.create_dataset(save_dir=train_save_dir)
+
+    # 验证集处理
+    val_image_dir = 'data/val/images/'
+    val_label_path = 'data/train/label_val.json'
+    val_save_dir = 'data/preprocessed_val/'
+
+    val_preprocessor = DataPreprocessing(image_dir=val_image_dir, label_path=val_label_path)
+    val_preprocessor.create_dataset(save_dir=val_save_dir)
+
+    print("Data preprocessing complete.")
