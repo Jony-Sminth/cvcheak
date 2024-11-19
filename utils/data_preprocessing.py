@@ -39,6 +39,7 @@ class DataPreprocessing:
     def preprocess_image(self, image_id):
         # 加载图像
         image = self.load_image(image_id)
+        width, height = image.size
 
         # 获取该图像的标签
         regions = []
@@ -48,10 +49,15 @@ class DataPreprocessing:
                 break
 
         # 为了让模型了解篡改的区域，我们为这些区域创建一个掩膜
-        mask = np.zeros((image.size[1], image.size[0]), dtype=np.uint8)  # mask 的形状为 (height, width)
+        mask = np.zeros((height, width), dtype=np.uint8)  # mask 的形状为 (height, width)
         for region in regions:
             x1, y1, x2, y2 = map(int, region)
-            mask[y1:y2, x1:x2] = 1
+            # 确保坐标不越界
+            x1, x2 = max(0, min(x1, width)), max(0, min(x2, width))
+            y1, y2 = max(0, min(y1, height)), max(0, min(y2, height))
+
+            if x1 < x2 and y1 < y2:
+                mask[y1:y2, x1:x2] = 255  # 使用 255 而不是 1 提高对比度
 
         # 使用 torchvision.transforms 进行图像增强和预处理
         image = self.transform(image)  # 转换为张量，并标准化
@@ -75,7 +81,7 @@ class DataPreprocessing:
                 mask_save_path = os.path.join(save_dir, f"mask_{image_id}.png")
 
                 torch.save(image, image_save_path)  # 保存图像为 PyTorch 的张量文件
-                cv2.imwrite(mask_save_path, mask * 255)  # 保存掩膜为单通道的 PNG 图像
+                cv2.imwrite(mask_save_path, mask)  # 保存掩膜为单通道的 PNG 图像
             except FileNotFoundError as e:
                 print(e)
 
@@ -83,7 +89,7 @@ class DataPreprocessing:
 if __name__ == "__main__":
     # 训练集处理
     train_image_dir = 'data/train/images/'
-    train_label_path = 'data/train/label_train.json'
+    train_label_path = 'data/train/label_train_split.json'
     train_save_dir = 'data/preprocessed_train/'
 
     train_preprocessor = DataPreprocessing(image_dir=train_image_dir, label_path=train_label_path)
@@ -91,7 +97,7 @@ if __name__ == "__main__":
 
     # 验证集处理
     val_image_dir = 'data/val/images/'
-    val_label_path = 'data/train/label_val.json'
+    val_label_path = 'data/train/label_val_split.json'
     val_save_dir = 'data/preprocessed_val/'
 
     val_preprocessor = DataPreprocessing(image_dir=val_image_dir, label_path=val_label_path)
