@@ -94,7 +94,7 @@ if __name__ == "__main__":
     preprocessor = DataPreprocessing(image_dir=image_dir, label_path=label_path)
 
     # 指定你要试验的图像 ID
-# 试验多个图像 ID
+
     for image_id in ['train_1001.jpg', 'train_2001.jpg', 'train_3001.jpg','train_13817.jpg']:
         try:
             preprocessed_image, mask = preprocessor.preprocess_image(image_id)
