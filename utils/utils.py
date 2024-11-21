@@ -12,28 +12,24 @@ def classify_images(preprocessed_image_dir, label_path):
     tampered_dir = os.path.join(preprocessed_image_dir, "tampered")
     not_tampered_dir = os.path.join(preprocessed_image_dir, "not_tampered")
 
-    # 创建类别文件夹
     os.makedirs(tampered_dir, exist_ok=True)
     os.makedirs(not_tampered_dir, exist_ok=True)
 
-    # 加载标签
     with open(label_path, 'r') as f:
         labels = json.load(f)
 
-    # 按照标签将图像移动到相应类别的文件夹
     for label in labels:
         image_id = label['id']
         regions = label['region']
+        # 文件扩展名为 .pt（预处理后的文件格式）
+        image_id = image_id.replace('.pt', '.jpg', '.png')  # 适配文件扩展名
         src_path = os.path.join(preprocessed_image_dir, image_id)
 
         if len(regions) > 0:
-            # 图像包含篡改区域，属于 tampered 类别
             dst_path = os.path.join(tampered_dir, image_id)
         else:
-            # 没有篡改区域，属于 not_tampered 类别
             dst_path = os.path.join(not_tampered_dir, image_id)
 
-        # 如果源文件存在才移动
         if os.path.exists(src_path):
             shutil.move(src_path, dst_path)
         else:

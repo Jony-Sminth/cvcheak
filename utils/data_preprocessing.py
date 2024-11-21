@@ -14,7 +14,6 @@ class DataPreprocessing:
 
         # 使用 torchvision.transforms 进行图像变换，调整图像尺寸并转换为张量
         self.transform = transforms.Compose([
-            transforms.Resize((512, 512)),  # 将所有图像大小调整为 512x512
             transforms.ToTensor(),
             transforms.Normalize(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5])
         ])
@@ -74,16 +73,25 @@ class DataPreprocessing:
                 break
             image_id = label["id"]
             try:
-                image, mask = self.preprocess_image(image_id)
-                
-                # 保存处理后的图像和掩膜
-                image_save_path = os.path.join(save_dir, f"{image_id}.pt")  # 保存为 PyTorch 的张量格式
-                mask_save_path = os.path.join(save_dir, f"mask_{image_id}.png")
+                file_base_name = os.path.splitext(image_id)[0]  # 去掉原始扩展名
 
-                torch.save(image, image_save_path)  # 保存图像为 PyTorch 的张量文件
-                cv2.imwrite(mask_save_path, mask)  # 保存掩膜为单通道的 PNG 图像
-            except FileNotFoundError as e:
-                print(e)
+                # 预处理图像和掩膜
+                image, mask = self.preprocess_image(image_id)
+
+                # 保存处理后的图像
+                image_save_path = os.path.join(save_dir, f"{file_base_name}.pt")
+                torch.save(image, image_save_path)
+
+                # 保存掩膜
+                mask_save_path = os.path.join(save_dir, f"{file_base_name}_mask.png")
+                if mask is not None and mask.size > 0:
+                    cv2.imwrite(mask_save_path, mask)
+                else:
+                    print(f"Warning: Mask is empty for {image_id}")
+            except Exception as e:
+                print(f"Failed to process image {image_id}: {e}")
+
+
 
 # 创建数据预处理对象并生成数据集
 if __name__ == "__main__":
@@ -96,7 +104,7 @@ if __name__ == "__main__":
     train_preprocessor.create_dataset(save_dir=train_save_dir)
 
     # 验证集处理
-    val_image_dir = 'data/val/images/'
+    val_image_dir = 'data/train/images/'
     val_label_path = 'data/train/label_val_split.json'
     val_save_dir = 'data/preprocessed_val/'
 
