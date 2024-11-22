@@ -1,18 +1,25 @@
+from torchvision.models.detection.faster_rcnn import FastRCNNPredictor
+from torchvision.models.detection.transform import GeneralizedRCNNTransform
 import torchvision
-import torch
-import torchvision.transforms as T
+import torch.nn as nn
 
 def get_faster_rcnn_model(num_classes):
-    # Load a pre-trained Faster R-CNN model
-    model = torchvision.models.detection.fasterrcnn_resnet50_fpn(pretrained=True)
+    # 加载预训练 Faster R-CNN 模型
+    model = torchvision.models.detection.fasterrcnn_resnet50_fpn(weights="DEFAULT")
 
-    # Get the number of input features for the classifier
+    # 修改 backbone，支持 4 通道输入
+    model.backbone.body.conv1 = nn.Conv2d(4, 64, kernel_size=7, stride=2, padding=3, bias=False)
+
+    # 修改 transform，支持 4 通道图像
+    model.transform = GeneralizedRCNNTransform(
+        min_size=800,
+        max_size=1333,
+        image_mean=[0.5, 0.5, 0.5, 0.0],  # 第 4 通道为 mask，均值为 0.0
+        image_std=[0.5, 0.5, 0.5, 1.0]    # 第 4 通道标准差为 1.0
+    )
+
+    # 修改分类头，适应自定义类别数量
     in_features = model.roi_heads.box_predictor.cls_score.in_features
-
-    # Replace the head of the model with a new one (num_classes is 2, assuming "tampered" and "not tampered")
-    model.roi_heads.box_predictor = torchvision.models.detection.faster_rcnn.FastRCNNPredictor(in_features, num_classes)
+    model.roi_heads.box_predictor = FastRCNNPredictor(in_features, num_classes)
 
     return model
-
-# 使用2个类别，一个是背景，一个是篡改区域
-# model = get_faster_rcnn_model(num_classes=2)

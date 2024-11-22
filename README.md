@@ -5,6 +5,8 @@
     - tests/                # 测试代码
         -checkPic.py        # 检查每个标签是否有对应的图像文件
     - data/
+        - preprocessed_train   # 预处理后的训练数据
+        - preprocessed_val   # 预处理后的验证数据
         - train/           # 训练数据
         - validation/         # 验证数据
         - test/            # 测试数据
