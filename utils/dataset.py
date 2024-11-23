@@ -8,30 +8,19 @@ from torchvision import transforms
 class CustomDataset(Dataset):
     def __init__(self, image_dir, label_path, transform=None):
         """
-        初始化自定义数据集。
+        初始化数据集
 
         Args:
-            image_dir (str): 图像文件路径。
-            label_path (str): 标签文件路径。
-            transform (callable, optional): 图像预处理操作。
+            image_dir (str): 图像和掩膜的存储路径
+            label_path (str): 标签文件路径（JSON）
+            transform (callable, optional): 图像变换函数
         """
         self.image_dir = image_dir
-        self.label_path = label_path  # 保存 label_path 为实例属性
         self.transform = transform
-        self.labels = self._load_labels()
-        self.warning_count = 0  # 添加警告计数器
 
-    def _load_labels(self):
-        """
-        加载标签文件。
-
-        Returns:
-            list: 标签列表。
-        """
-        if not os.path.exists(self.label_path):
-            raise FileNotFoundError(f"Label file not found: {self.label_path}")
-        with open(self.label_path, 'r') as f:
-            return json.load(f)
+        # 加载标签文件
+        with open(label_path, 'r') as f:
+            self.labels = json.load(f)
 
     def __len__(self):
         return len(self.labels)
@@ -89,6 +78,7 @@ class CustomDataset(Dataset):
         except Exception as e:
             print(f"Error processing index {idx}: {str(e)}")
             return None, None
+
 def collate_fn(batch):
     """
     批处理函数，用于 DataLoader。
