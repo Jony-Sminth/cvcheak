@@ -1,7 +1,7 @@
 from models.ModelTrainer import ModelTrainer
 
 if __name__ == '__main__':
-    trainer = ModelTrainer(model_name='faster_rcnn', num_classes=2, log_frequency= 1300)  # 在初始化时定义类别数量
+    trainer = ModelTrainer(model_name='faster_rcnn', num_classes=2, log_frequency= 1300, debug=True)  # 在初始化时定义类别数量
 
     trainer.train(
         train_image_dir='data/preprocessed_train/',

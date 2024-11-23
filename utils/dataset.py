@@ -62,11 +62,6 @@ class CustomDataset(Dataset):
                     if y1 > y2:
                         y1, y2 = y2, y1  # 如果上边界大于下边界，交换
                     valid_regions.append([x1, y1, x2, y2])
-                    
-                    # 打印问题框的信息
-                    if x1 == x2 or y1 == y2:
-                        print(f"Warning: Found invalid box in image {image_id}: Original box {region}")
-                        print(f"Corrected to: [{x1}, {y1}, {x2}, {y2}]")
 
                 target = {
                     "boxes": torch.tensor(valid_regions, dtype=torch.float32),
@@ -77,7 +72,7 @@ class CustomDataset(Dataset):
 
         except Exception as e:
             print(f"Error processing index {idx}: {str(e)}")
-            return None, None
+            raise
 
 def collate_fn(batch):
     """
@@ -89,10 +84,7 @@ def collate_fn(batch):
     Returns:
         tuple: (图像列表, 目标列表) 或 (None, None)（如果批次为空）。
     """
-    # 过滤掉无效样本
-    batch = [sample for sample in batch if sample[0] is not None]
-
+    batch = [sample for sample in batch if sample[0] is not None and sample[1] is not None]
     if len(batch) == 0:
         return None, None
-
     return tuple(zip(*batch))
