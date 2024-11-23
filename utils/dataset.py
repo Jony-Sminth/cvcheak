@@ -37,15 +37,6 @@ class CustomDataset(Dataset):
         return len(self.labels)
 
     def __getitem__(self, idx):
-        """
-        获取数据样本。
-
-        Args:
-            idx (int): 样本索引。
-
-        Returns:
-            tuple: (图像, 目标) 或 (None, None)（如果无效）。
-        """
         try:
             label = self.labels[idx]
             image_id = label['id']
@@ -63,23 +54,41 @@ class CustomDataset(Dataset):
             # 检查目标框
             regions = label['region']
             if not regions:
-                if self.warning_count < 10:  # 只打印前 10 条警告
-                    print(f"Warning: No regions found for image {image_id}")
-                self.warning_count += 1
-                return None, None
+                target = {
+                    "boxes": torch.zeros((0, 4), dtype=torch.float32),
+                    "labels": torch.zeros((0,), dtype=torch.int64)
+                }
+            else:
+                # 添加框的验证
+                valid_regions = []
+                for region in regions:
+                    x1, y1, x2, y2 = map(float, region)
+                    # 检查并修复无效的框
+                    if x1 == x2:
+                        x2 += 1  # 如果宽度为0，加1个像素
+                    if y1 == y2:
+                        y2 += 1  # 如果高度为0，加1个像素
+                    if x1 > x2:
+                        x1, x2 = x2, x1  # 如果左边界大于右边界，交换
+                    if y1 > y2:
+                        y1, y2 = y2, y1  # 如果上边界大于下边界，交换
+                    valid_regions.append([x1, y1, x2, y2])
+                    
+                    # 打印问题框的信息
+                    if x1 == x2 or y1 == y2:
+                        print(f"Warning: Found invalid box in image {image_id}: Original box {region}")
+                        print(f"Corrected to: [{x1}, {y1}, {x2}, {y2}]")
 
-            target = {
-                "boxes": torch.tensor([region for region in regions], dtype=torch.float32),
-                "labels": torch.ones((len(regions),), dtype=torch.int64)
-            }
+                target = {
+                    "boxes": torch.tensor(valid_regions, dtype=torch.float32),
+                    "labels": torch.ones((len(valid_regions),), dtype=torch.int64)
+                }
 
             return image, target
 
         except Exception as e:
             print(f"Error processing index {idx}: {str(e)}")
             return None, None
-
-
 def collate_fn(batch):
     """
     批处理函数，用于 DataLoader。
