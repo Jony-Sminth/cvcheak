@@ -6,6 +6,7 @@ from models.Faster_R_CNN import get_faster_rcnn_model
 from utils.dataset import CustomDataset
 from utils.dataset import collate_fn
 from tqdm import tqdm
+import GPUtil  # GPU 监控模块
 import time
 
 class ModelTrainer:
@@ -36,6 +37,15 @@ class ModelTrainer:
             log_frequency (int): 每多少个 batch 打印一次日志
         """
         self.log_frequency = log_frequency
+
+    def log_gpu_status(self):
+        """
+        打印当前 GPU 使用状态
+        """
+        gpus = GPUtil.getGPUs()
+        for gpu in gpus:
+            print(f"GPU ID: {gpu.id}, Name: {gpu.name}, Load: {gpu.load * 100:.2f}%, "
+                  f"Free Memory: {gpu.memoryFree} MB, Total Memory: {gpu.memoryTotal} MB")
 
     def _load_model(self):
         """
@@ -78,6 +88,7 @@ class ModelTrainer:
             # 每 log_frequency 批次打印一次日志
             if (batch_idx + 1) % self.log_frequency == 0:
                 print(f"Epoch [{epoch + 1}/{self.num_epochs}], Batch [{batch_idx + 1}/{batch_count}], Loss: {losses.item():.4f}")
+                self.log_gpu_status()  # 打印 GPU 使用状态
 
             # 更新进度条
             pbar.set_postfix({'loss': f'{losses.item():.4f}', 'avg_loss': f'{epoch_loss / (batch_idx + 1):.4f}'})
@@ -108,6 +119,7 @@ class ModelTrainer:
 
                 if (batch_idx + 1) % self.log_frequency == 0:
                     print(f"Validation Epoch [{epoch + 1}], Batch [{batch_idx + 1}/{batch_count}], Loss: {losses.item():.4f}")
+                    self.log_gpu_status()  # 打印 GPU 使用状态
 
                 pbar.set_postfix({'val_loss': f'{losses.item():.4f}', 'avg_val_loss': f'{val_loss / (batch_idx + 1):.4f}'})
 
@@ -128,7 +140,7 @@ class ModelTrainer:
         print(f"- Weight decay: {weight_decay}")
         print(f"- Device: {self.device}")
 
-        self.num_epochs = num_epochs  # 保存总epoch数用于显示进度
+        self.num_epochs = num_epochs  # 保存总 epoch 数用于显示进度
 
         # 图像预处理
         transform = transforms.Compose([
@@ -177,7 +189,7 @@ class ModelTrainer:
             for epoch in range(num_epochs):
                 epoch_start_time = time.time()
                 
-                # 训练一个epoch
+                # 训练一个 epoch
                 train_loss = self._train_one_epoch(train_loader, optimizer, epoch)
                 history['train_loss'].append(train_loss)
                 
