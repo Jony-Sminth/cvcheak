@@ -27,6 +27,7 @@
     - train.py               # 训练脚本
     - predict.py               # 预测脚本
     - requirements.txt          # 项目所需库
+    - .gitignore            # Git 忽略文件
 ```
 
 ### 任务概述
