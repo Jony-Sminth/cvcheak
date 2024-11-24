@@ -1,4 +1,6 @@
+import math
 import os
+import traceback
 import torch
 from torch.utils.data import DataLoader
 from torchvision import transforms
@@ -8,17 +10,16 @@ from utils.dataset import collate_fn
 from tqdm import tqdm
 import GPUtil  # GPU 监控模块
 import time
+from torchvision.ops import box_iou
 
 class ModelTrainer:
-    def __init__(self, model_name='faster_rcnn', num_classes=2, device=None, log_frequency=100, debug=True):
-        """
-        初始化时添加debug参数
-        """
+    def __init__(self, model_name='faster_rcnn', num_classes=2, device=None, log_frequency=100, debug=True, train_dataset_limit=None):
         self.model_name = model_name
         self.device = device if device else ('cuda' if torch.cuda.is_available() else 'cpu')
         self.num_classes = num_classes
         self.log_frequency = log_frequency
-        self.debug = debug  # 添加debug标志
+        self.debug = debug
+        self.train_dataset_limit = train_dataset_limit
         self.model = self._load_model()
         self.model = self.model.to(self.device)
         
@@ -138,23 +139,21 @@ class ModelTrainer:
                         print(f"Loss dict keys: {loss_dict.keys()}")
                         print(f"Loss values: {[v.item() for v in loss_dict.values()]}")
                 
-                if isinstance(loss_dict, dict):
-                    losses = sum(loss for loss in loss_dict.values())
-                elif isinstance(loss_dict, list):
-                    losses = sum(loss_item for loss_item in loss_dict)
-                else:
-                    losses = loss_dict
-
+                losses, loss_value = self._calculate_total_loss(loss_dict)
                 losses.backward()
                 optimizer.step()
 
-                epoch_loss += losses.item()
+                epoch_loss += loss_value
 
                 if (batch_idx + 1) % self.log_frequency == 0:
-                    print(f"Epoch [{epoch + 1}/{self.num_epochs}], Batch [{batch_idx + 1}/{batch_count}], Loss: {losses.item():.4f}")
+                    print(f"Epoch [{epoch + 1}/{self.num_epochs}], "
+                        f"Batch [{batch_idx + 1}/{batch_count}], Loss: {loss_value:.4f}")
                     self.log_gpu_status()
 
-                pbar.set_postfix({'loss': f'{losses.item():.4f}', 'avg_loss': f'{epoch_loss / (batch_idx + 1):.4f}'})
+                pbar.set_postfix({
+                    'loss': f'{loss_value:.4f}',
+                    'avg_loss': f'{epoch_loss / (batch_idx + 1):.4f}'
+                })
 
             except Exception as e:
                 print(f"\nError in training batch {batch_idx}:")
@@ -165,13 +164,139 @@ class ModelTrainer:
                     print("\nFull traceback:")
                     print(traceback.format_exc())
                 continue
+
         return epoch_loss / batch_count
+
+    def _calculate_total_loss(self, loss_dict):
+        """
+        计算总损失，支持列表格式的损失
+        """
+        try:
+            if isinstance(loss_dict, dict):
+                # 处理字典格式的损失
+                total_loss = sum(loss for loss in loss_dict.values() if isinstance(loss, torch.Tensor))
+                return total_loss, total_loss.item()
+            elif isinstance(loss_dict, list):
+                # 处理列表格式的损失
+                # 假设列表中第一个元素是损失字典
+                if loss_dict and isinstance(loss_dict[0], dict):
+                    return self._calculate_total_loss(loss_dict[0])
+                else:
+                    print(f"Warning: Unexpected list format in loss: {loss_dict}")
+                    return torch.tensor(0.0, device=self.device), 0.0
+            elif isinstance(loss_dict, torch.Tensor):
+                # 处理张量格式的损失
+                if loss_dict.numel() == 1:
+                    return loss_dict, loss_dict.item()
+                else:
+                    total_loss = loss_dict.sum()
+                    return total_loss, total_loss.item()
+            elif isinstance(loss_dict, (int, float)):
+                # 处理数值格式的损失
+                return torch.tensor(loss_dict, device=self.device), float(loss_dict)
+            else:
+                print(f"Warning: Unexpected loss format: {type(loss_dict)}")
+                return torch.tensor(0.0, device=self.device), 0.0
+        except Exception as e:
+            print(f"Error in loss calculation: {str(e)}")
+            return torch.tensor(0.0, device=self.device), 0.0
+
+    def _compute_correct_predictions(self, gt_boxes, gt_labels, pred):
+        """
+        计算预测框与真实框的IoU，并使用更严格的标准统计正确预测的数量
         
+        Args:
+            gt_boxes (Tensor): 真实边界框
+            gt_labels (Tensor): 真实标签
+            pred (dict): 包含 'boxes', 'labels' 和 'scores' 的预测结果字典
+        
+        Returns:
+            int: 正确预测的数量
+        """
+        try:
+            from torchvision.ops import box_iou
+            
+            # 提取预测结果
+            pred_boxes = pred['boxes']
+            pred_labels = pred['labels']
+            pred_scores = pred.get('scores', torch.ones_like(pred_labels))  # 如果没有scores，默认为1
+            
+            # 如果没有预测框或真实框，直接返回0
+            if len(pred_boxes) == 0 or len(gt_boxes) == 0:
+                return 0
+                
+            # 确保张量在同一设备上
+            pred_boxes = pred_boxes.to(self.device)
+            gt_boxes = gt_boxes.to(self.device)
+            pred_labels = pred_labels.to(self.device)
+            gt_labels = gt_labels.to(self.device)
+            pred_scores = pred_scores.to(self.device)
+            
+            # 设置阈值
+            IOU_THRESHOLD = 0.5
+            SCORE_THRESHOLD = 0.5
+            
+            # 只考虑置信度高于阈值的预测框
+            high_conf_mask = pred_scores > SCORE_THRESHOLD
+            pred_boxes = pred_boxes[high_conf_mask]
+            pred_labels = pred_labels[high_conf_mask]
+            pred_scores = pred_scores[high_conf_mask]
+            
+            if len(pred_boxes) == 0:
+                return 0
+            
+            # 计算IoU矩阵
+            ious = box_iou(pred_boxes, gt_boxes)  # shape: [num_pred, num_gt]
+            
+            # 初始化计数器
+            correct_count = 0
+            matched_gt_indices = set()
+            
+            # 按置信度降序处理预测框
+            conf_sort = torch.argsort(pred_scores, descending=True)
+            for pred_idx in conf_sort:
+                # 找到最佳匹配的真实框
+                iou_with_gt = ious[pred_idx]
+                best_gt_iou, best_gt_idx = iou_with_gt.max(dim=0)
+                best_gt_idx = best_gt_idx.item()
+                
+                # 如果这个真实框已经被匹配过，跳过
+                if best_gt_idx in matched_gt_indices:
+                    continue
+                    
+                # 检查是否满足条件：IoU大于阈值且类别匹配
+                if (best_gt_iou > IOU_THRESHOLD and 
+                    pred_labels[pred_idx] == gt_labels[best_gt_idx]):
+                    correct_count += 1
+                    matched_gt_indices.add(best_gt_idx)
+            
+            if self.debug and (correct_count > 0 or len(gt_boxes) > 0):
+                print(f"\nAccuracy Debug Info:")
+                print(f"GT boxes: {len(gt_boxes)}, Pred boxes: {len(pred_boxes)}")
+                print(f"Correct predictions: {correct_count}")
+                print(f"GT Labels: {gt_labels}")
+                print(f"Pred Labels: {pred_labels}")
+                print(f"Best IoUs: {ious.max(dim=0)[0]}")
+            
+            return correct_count
+            
+        except Exception as e:
+            print(f"Error in compute_correct_predictions: {str(e)}")
+            import traceback
+            print(traceback.format_exc())
+            return 0
+
     def _validate_one_epoch(self, val_loader, epoch):
+        """
+        验证一个epoch，包含更详细的评估指标
+        """
         self.model.eval()
         val_loss = 0
         batch_count = len(val_loader)
-
+        total_gt_objects = 0     # 真实框总数
+        total_pred_objects = 0   # 预测框总数
+        correct_predictions = 0   # 正确预测数
+        
         if self.debug:
             print(f"\nStarting validation epoch {epoch + 1}")
             print(f"Number of batches: {batch_count}")
@@ -182,55 +307,102 @@ class ModelTrainer:
             for batch_idx, (images, targets) in enumerate(pbar):
                 try:
                     if images is None or targets is None:
-                        if self.debug:
-                            print(f"Debug: Skipping invalid validation batch {batch_idx}")
-                            print(f"Debug: images is None: {images is None}")
-                            print(f"Debug: targets is None: {targets is None}")
                         continue
 
+                    # 将数据移到正确的设备上
                     images = [img.to(self.device) for img in images]
                     targets = [{k: v.to(self.device) for k, v in t.items()} for t in targets]
 
-                    if self.debug and batch_idx % self.log_frequency == 0:
-                        self._print_debug_info("Validation", batch_idx, images, targets)
+                    try:
+                        # 获取预测结果
+                        predictions = self.model(images)
+                        
+                        # 计算损失
+                        self.model.train()
+                        loss_dict = self.model(images, targets)
+                        self.model.eval()
+                        
+                        _, loss_value = self._calculate_total_loss(loss_dict)
+                        if loss_value is not None and not math.isnan(loss_value):
+                            val_loss += loss_value
 
-                    loss_dict = self.model(images, targets)
-                    
-                    if self.debug and batch_idx % self.log_frequency == 0:
-                        print(f"\nValidation Forward Pass Output:")
-                        print(f"Loss dict type: {type(loss_dict)}")
-                        if isinstance(loss_dict, dict):
-                            print(f"Loss dict keys: {loss_dict.keys()}")
-                            print(f"Loss values: {[v.item() for v in loss_dict.values()]}")
-                    
-                    if isinstance(loss_dict, dict):
-                        losses = sum(loss for loss in loss_dict.values())
-                    else:
-                        losses = loss_dict
+                        # 统计预测结果
+                        for target, pred in zip(targets, predictions):
+                            total_gt_objects += len(target["boxes"])
+                            total_pred_objects += len(pred["boxes"])
+                            
+                            correct = self._compute_correct_predictions(
+                                target["boxes"], 
+                                target["labels"], 
+                                pred
+                            )
+                            correct_predictions += correct
 
-                    val_loss += losses.item()
+                        # 计算各项指标
+                        precision = correct_predictions / max(total_pred_objects, 1)
+                        recall = correct_predictions / max(total_gt_objects, 1)
+                        f1_score = 2 * (precision * recall) / max((precision + recall), 1e-6)
+                        
+                        # 更新进度条
+                        pbar.set_postfix({
+                            'val_loss': f'{loss_value:.4f}',
+                            'avg_loss': f'{val_loss/(batch_idx+1):.4f}',
+                            'precision': f'{precision:.3f}',
+                            'recall': f'{recall:.3f}',
+                            'f1': f'{f1_score:.3f}'
+                        })
 
-                    if (batch_idx + 1) % self.log_frequency == 0:
-                        print(f"Validation Epoch [{epoch + 1}], Batch [{batch_idx + 1}/{batch_count}], Loss: {losses.item():.4f}")
-                        self.log_gpu_status()
-
-                    pbar.set_postfix({'val_loss': f'{losses.item():.4f}', 'avg_val_loss': f'{val_loss / (batch_idx + 1):.4f}'})
+                    except Exception as e:
+                        print(f"Error in batch processing: {str(e)}")
+                        continue
 
                 except Exception as e:
-                    print(f"\nError in validation batch {batch_idx}:")
-                    print(f"Error type: {type(e).__name__}")
-                    print(f"Error message: {str(e)}")
+                    print(f"\nError in validation batch {batch_idx}: {str(e)}")
                     if self.debug:
-                        import traceback
-                        print("\nFull traceback:")
                         print(traceback.format_exc())
                     continue
 
-        return val_loss / batch_count
+            # 计算最终指标
+            final_loss = val_loss / batch_count if batch_count > 0 else float('inf')
+            final_precision = correct_predictions / max(total_pred_objects, 1)
+            final_recall = correct_predictions / max(total_gt_objects, 1)
+            final_f1 = 2 * (final_precision * final_recall) / max((final_precision + final_recall), 1e-6)
+
+            if self.debug:
+                print(f"\nValidation Summary:")
+                print(f"Average Loss: {final_loss:.4f}")
+                print(f"Total GT Objects: {total_gt_objects}")
+                print(f"Total Predictions: {total_pred_objects}")
+                print(f"Correct Predictions: {correct_predictions}")
+                print(f"Precision: {final_precision:.4f}")
+                print(f"Recall: {final_recall:.4f}")
+                print(f"F1 Score: {final_f1:.4f}")
+
+            return final_loss, final_f1  # 返回F1分数作为主要评估指标
+
+    def _handle_irregular_loss_dict(self, loss_dict):
+        losses = 0
+        loss_value = 0
+        for _, v in loss_dict.items():
+            if isinstance(v, torch.Tensor):
+                losses += v
+                loss_value += v.item()
+            else:
+                print(f"Warning: Found non-Tensor value in loss_dict: {v}")
+        return losses, loss_value
+
+    def _convert_loss_dict_to_dict(self, loss_list):
+        """
+        将列表类型的 loss_dict 转换为字典类型。
+        """
+        loss_dict = {}
+        for i, loss in enumerate(loss_list):
+            loss_dict[f"loss_{i}"] = loss
+        return loss_dict
 
     def train(self, train_image_dir, val_image_dir, train_label_path, val_label_path,
-              batch_size=2, num_epochs=10, learning_rate=0.005, momentum=0.9, 
-              weight_decay=0.0005, save_dir="models/checkpoints/"):
+            batch_size=2, num_epochs=10, learning_rate=0.005, momentum=0.9, 
+            weight_decay=0.0005, save_dir="models/checkpoints/"):
         print("\nInitializing training...")
         print(f"Training with following parameters:")
         print(f"- Batch size: {batch_size}")
@@ -253,8 +425,11 @@ class ModelTrainer:
                                     label_path=train_label_path, 
                                     transform=transform)
         val_dataset = CustomDataset(image_dir=val_image_dir, 
-                                  label_path=val_label_path, 
-                                  transform=transform)
+                                label_path=val_label_path, 
+                                transform=transform)
+        
+        if self.train_dataset_limit is not None:
+            train_dataset = torch.utils.data.Subset(train_dataset, range(self.train_dataset_limit))
         
         print(f"Training dataset size: {len(train_dataset)}")
         print(f"Validation dataset size: {len(val_dataset)}")
@@ -328,6 +503,8 @@ class ModelTrainer:
                 print(traceback.format_exc())
             raise
         finally:
+            # 保存最终模型时确保模型在CPU上
+            self.model = self.model.cpu()
             final_model_path = os.path.join(save_dir, "model_final.pth")
             torch.save(self.model.state_dict(), final_model_path)
             
