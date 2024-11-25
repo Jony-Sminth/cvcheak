@@ -10,7 +10,10 @@ from utils.dataset import collate_fn
 from tqdm import tqdm
 import GPUtil  # GPU 监控模块
 import time
+import onnx
+import torch.onnx
 from torchvision.ops import box_iou
+import traceback
 
 class ModelTrainer:
     def __init__(self, model_name='faster_rcnn', num_classes=2, device=None, log_frequency=100, debug=True, train_dataset_limit=None):
@@ -160,7 +163,6 @@ class ModelTrainer:
                 print(f"Error type: {type(e).__name__}")
                 print(f"Error message: {str(e)}")
                 if self.debug:
-                    import traceback
                     print("\nFull traceback:")
                     print(traceback.format_exc())
                 continue
@@ -213,9 +215,7 @@ class ModelTrainer:
         Returns:
             int: 正确预测的数量
         """
-        try:
-            from torchvision.ops import box_iou
-            
+        try:    
             # 提取预测结果
             pred_boxes = pred['boxes']
             pred_labels = pred['labels']
@@ -282,7 +282,6 @@ class ModelTrainer:
             
         except Exception as e:
             print(f"Error in compute_correct_predictions: {str(e)}")
-            import traceback
             print(traceback.format_exc())
             return 0
 
@@ -498,18 +497,170 @@ class ModelTrainer:
             print(f"Error type: {type(e).__name__}")
             print(f"Error message: {str(e)}")
             if self.debug:
-                import traceback
                 print("\nFull traceback:")
                 print(traceback.format_exc())
             raise
         finally:
-            # 保存最终模型时确保模型在CPU上
-            self.model = self.model.cpu()
-            final_model_path = os.path.join(save_dir, "model_final.pth")
-            torch.save(self.model.state_dict(), final_model_path)
-            
-            total_time = time.time() - training_start_time
-            print(f"\nTraining completed in {total_time:.2f}s")
-            print(f"Final model saved at {final_model_path}")
+            try:
+                # 保存 PyTorch 模型（用于继续训练）
+                self.model = self.model.cpu()
+                final_model_path = os.path.join(save_dir, "model_final.pth")
+                torch.save(self.model.state_dict(), final_model_path)
+                print(f"\nPyTorch model saved at {final_model_path}")
+                
+                # 导出 ONNX 模型（用于部署）
+                try:
+                    # 清理 GPU 缓存（如果使用的是 GPU）
+                    if torch.cuda.is_available():
+                        torch.cuda.empty_cache()
+                    
+                    onnx_path = os.path.join(save_dir, "model_final.onnx")
+                    print("\nStarting ONNX export...")
+                    self.export_model(self.model, None, onnx_path)
+                    print("ONNX export completed successfully!")
+                    
+                except Exception as export_error:
+                    print(f"\nWarning: Failed to export ONNX model:")
+                    print(f"Error type: {type(export_error).__name__}")
+                    print(f"Error message: {str(export_error)}")
+                    if self.debug:
+                        print("\nFull export error traceback:")
+                        print(traceback.format_exc())
+                
+                total_time = time.time() - training_start_time
+                print(f"\nTraining completed in {total_time:.2f}s")
 
-        return history
+                return history
+            
+            except Exception as e:
+                print(f"\nError during finalization:")
+                print(f"Error type: {type(e).__name__}")
+                print(f"Error message: {str(e)}")
+                if self.debug:
+                    print("\nFull traceback:")
+                    print(traceback.format_exc())
+                raise
+    def _export_transform(self, images_batch):
+        """
+        转换输入格式，从批次张量转换为张量列表
+        """
+        if isinstance(images_batch, torch.Tensor):
+            if images_batch.ndim == 4:  # [B, C, H, W]
+                return [img for img in images_batch]
+        return images_batch
+
+    def export_model(self, model, sample_input, save_path):
+        """
+        将模型导出为 ONNX 格式，使用 JIT trace 来处理 Faster R-CNN
+        
+        Args:
+            model: 要导出的模型
+            sample_input: 样例输入
+            save_path: 保存路径
+        """
+        try:
+            # 确保模型处于评估模式
+            model.eval()
+            
+            # 确保模型在CPU上
+            model = model.to('cpu')
+            
+            class FasterRCNNWrapper(torch.nn.Module):
+                def __init__(self, model):
+                    super(FasterRCNNWrapper, self).__init__()
+                    self.model = model
+                    self.model.eval()
+
+                def forward(self, images):
+                    # 预处理输入
+                    if isinstance(images, torch.Tensor):
+                        if images.dim() == 4:  # [batch_size, channels, height, width]
+                            images = [img for img in images]  # 转换为图像列表
+                        else:  # [channels, height, width]
+                            images = [images]  # 单张图像转换为列表
+                    
+                    # 使用 no_grad 来确保不计算梯度
+                    with torch.no_grad():
+                        # 获取模型预测结果
+                        detections = self.model(images)
+                        
+                        if len(detections) == 0:
+                            return (
+                                torch.zeros((0, 4), dtype=torch.float32),
+                                torch.zeros((0,), dtype=torch.int64),
+                                torch.zeros((0,), dtype=torch.float32)
+                            )
+                        
+                        # 获取第一个预测结果（因为我们每次只处理一张图片）
+                        detection = detections[0]
+                        
+                        # 提取预测框、标签和分数
+                        boxes = detection.get('boxes', torch.zeros((0, 4), dtype=torch.float32))
+                        labels = detection.get('labels', torch.zeros((0,), dtype=torch.int64))
+                        scores = detection.get('scores', torch.zeros((0,), dtype=torch.float32))
+                        
+                        # 确保所有输出都是张量
+                        if not isinstance(boxes, torch.Tensor):
+                            boxes = torch.tensor(boxes)
+                        if not isinstance(labels, torch.Tensor):
+                            labels = torch.tensor(labels)
+                        if not isinstance(scores, torch.Tensor):
+                            scores = torch.tensor(scores)
+                        
+                        return boxes, labels, scores
+
+            # 创建模型包装器
+            wrapped_model = FasterRCNNWrapper(model)
+            
+            # 创建示例输入
+            dummy_input = torch.randn(3, 800, 800)
+            
+            # 使用 JIT trace 来捕获模型
+            traced_model = torch.jit.trace(wrapped_model, dummy_input, strict=False)
+            
+            # 动态轴配置
+            dynamic_axes = {
+                'input': {
+                    1: 'height',
+                    2: 'width'
+                },
+                'boxes': {0: 'num_detections'},
+                'labels': {0: 'num_detections'},
+                'scores': {0: 'num_detections'}
+            }
+            
+            # 导出为 ONNX
+            torch.onnx.export(
+                traced_model,               # 使用 traced 模型
+                dummy_input,                # 示例输入
+                save_path,                  # 保存路径
+                export_params=True,         # 导出模型参数
+                opset_version=11,           # ONNX 算子集版本
+                do_constant_folding=True,   # 常量折叠优化
+                input_names=['input'],      # 输入名称
+                output_names=[              # 输出名称
+                    'boxes',
+                    'labels', 
+                    'scores'
+                ],
+                dynamic_axes=dynamic_axes,  # 动态轴
+                verbose=self.debug
+            )
+            
+            if self.debug:
+                print(f"\nModel exported to ONNX format: {save_path}")
+                
+            # 验证导出的模型
+            onnx_model = onnx.load(save_path)
+            onnx.checker.check_model(onnx_model)
+            
+            if self.debug:
+                print("ONNX model checked successfully!")
+                
+        except Exception as e:
+            print(f"\nError exporting model to ONNX:")
+            print(f"Error type: {type(e).__name__}")
+            print(f"Error message: {str(e)}")
+            print("\nTraceback:")
+            import traceback
+            print(traceback.format_exc())
