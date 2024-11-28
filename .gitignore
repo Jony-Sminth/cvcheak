@@ -10,3 +10,6 @@
 *.pth
 *.xml
 *.iml
+*.onnx
+*.onnx.pb
+*.onnx.pbtxt
