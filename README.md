@@ -33,7 +33,7 @@
 
 部分结果展示：
 
-![image.png](attachment:output\results.json.png)
+![结果图片](attachment:output\results.png)
 
 ### 任务概述
 - **任务目标**：检测图像中被篡改的区域（例如使用了Copy-Move、Splicing或深度学习图像生成技术等）。
