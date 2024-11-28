@@ -1,8 +1,6 @@
 # 创建配置
 import torch
 from utils.predict_method import PredictionConfig, TamperingPredictor
-"""演示如何使用改进后的预测器"""
-# 创建配置
 config = PredictionConfig(
     confidence_threshold=0.5,
     device='cuda' if torch.cuda.is_available() else 'cpu',
