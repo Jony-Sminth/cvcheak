@@ -30,6 +30,10 @@
     - requirements.txt          # 项目所需库
     - .gitignore            # Git 忽略文件
 ```
+如果你想要模型的话可以直接去huggingface的model hub下载，或者自己训练。
+下载地址：https://huggingface.co/NewBridge/CV
+把模型放到指定的位置，训练时修改train.py中的目标模型地址就可以了。数据集在原题目中有提供，可以直接使用。
+题目地址：https://tianchi.aliyun.com/competition/entrance/532223?spm=a2c22.29524732.0.0.42127baeBUySAL
 
 部分结果展示：
 
