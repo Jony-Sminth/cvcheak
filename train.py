@@ -9,7 +9,7 @@ if __name__ == '__main__':
         train_label_path='data/train/label_train_split.json',
         val_label_path='data/train/label_val_split.json',
         batch_size=2,
-        num_epochs=1,
+        num_epochs=2,
         learning_rate=0.005,
         momentum=0.95,
         weight_decay=0.0001,
