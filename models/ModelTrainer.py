@@ -508,29 +508,29 @@ class ModelTrainer:
                 torch.save(self.model.state_dict(), final_model_path)
                 print(f"\nPyTorch model saved at {final_model_path}")
                 
-                # 导出 ONNX 模型（用于部署）
-                try:
-                    # 清理 GPU 缓存（如果使用的是 GPU）
-                    if torch.cuda.is_available():
-                        torch.cuda.empty_cache()
+            #     # 导出 ONNX 模型（用于部署）
+            #     try:
+            #         # 清理 GPU 缓存（如果使用的是 GPU）
+            #         if torch.cuda.is_available():
+            #             torch.cuda.empty_cache()
                     
-                    onnx_path = os.path.join(save_dir, "model_final.onnx")
-                    print("\nStarting ONNX export...")
-                    self.export_model(self.model, None, onnx_path)
-                    print("ONNX export completed successfully!")
+            #         onnx_path = os.path.join(save_dir, "model_final.onnx")
+            #         print("\nStarting ONNX export...")
+            #         self.export_model(self.model, None, onnx_path)
+            #         print("ONNX export completed successfully!")
                     
-                except Exception as export_error:
-                    print(f"\nWarning: Failed to export ONNX model:")
-                    print(f"Error type: {type(export_error).__name__}")
-                    print(f"Error message: {str(export_error)}")
-                    if self.debug:
-                        print("\nFull export error traceback:")
-                        print(traceback.format_exc())
+            #     except Exception as export_error:
+            #         print(f"\nWarning: Failed to export ONNX model:")
+            #         print(f"Error type: {type(export_error).__name__}")
+            #         print(f"Error message: {str(export_error)}")
+            #         if self.debug:
+            #             print("\nFull export error traceback:")
+            #             print(traceback.format_exc())
                 
-                total_time = time.time() - training_start_time
-                print(f"\nTraining completed in {total_time:.2f}s")
+            #     total_time = time.time() - training_start_time
+            #     print(f"\nTraining completed in {total_time:.2f}s")
 
-                return history
+            #     return history
             
             except Exception as e:
                 print(f"\nError during finalization:")
@@ -613,7 +613,7 @@ class ModelTrainer:
             wrapped_model = FasterRCNNWrapper(model)
             
             # 创建示例输入
-            dummy_input = torch.randn(3, 800, 800)
+            dummy_input = torch.randn(4, 800, 800) #
             
             # 使用 JIT trace 来捕获模型
             traced_model = torch.jit.trace(wrapped_model, dummy_input, strict=False)

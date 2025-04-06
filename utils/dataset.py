@@ -38,6 +38,10 @@ class CustomDataset(Dataset):
             image = torch.load(image_path)
             mask = cv2.imread(mask_path, cv2.IMREAD_GRAYSCALE)
             mask = torch.from_numpy(mask).float() / 255.0
+            # # 确保掩膜使用正确的归一化参数 (均值=0.0, 标准差=1.0)
+            # # 这里实际上不改变值，但明确了处理逻辑
+            # if mask.max() > 0:
+            #     mask = (mask - 0.0) / 1.0
             image = torch.cat([image, mask.unsqueeze(0)], dim=0)
 
             # 检查目标框
