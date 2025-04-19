@@ -39,6 +39,24 @@
 
 ![结果图片](output/results.png)
 
+自主训练方式：
+
+```
+# anaconda环境
+conda create -n cv python=3.9
+conda activate cv
+pip install -r requirements.txt
+```
+先运行数据集预处理脚本，自主调整数据集存放
+```
+python utils/data_preprocessing.py
+python train.py
+```
+训练时会生成日志和模型文件，训练完成后运行预测脚本
+```
+python predict.py
+```
+
 ### 任务概述
 - **任务目标**：检测图像中被篡改的区域（例如使用了Copy-Move、Splicing或深度学习图像生成技术等）。
 - **评价指标**：Micro-F1 score，越高表示越好。具体计算方式结合了**准确率 (Precision)** 和 **召回率 (Recall)**，需要根据检测到的篡改区域与真实标签进行对比，计算TP、FP、FN等。

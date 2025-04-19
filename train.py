@@ -4,9 +4,10 @@ if __name__ == '__main__':
     trainer = ModelTrainer(
         model_name='faster_rcnn', 
         num_classes=2, 
-        log_frequency=50,  # 更频繁的日志记录
+        log_frequency=500,  # 数值小就更频繁的日志记录
         debug=True,        # 启用调试模式
-        train_dataset_limit=None  # 不限制训练数据量，使用全部数据
+        train_dataset_limit=None,  # 不限制训练数据量，使用全部数据
+        log_to_file=True  # 日志输出到文件
     )
 
     trainer.train(

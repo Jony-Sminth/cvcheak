@@ -16,15 +16,19 @@ from torchvision.ops import box_iou
 import traceback
 import matplotlib.pyplot as plt
 import numpy as np
+import logging
+import datetime
 
 class ModelTrainer:
-    def __init__(self, model_name='faster_rcnn', num_classes=2, device=None, log_frequency=100, debug=True, train_dataset_limit=None):
+    def __init__(self, model_name='faster_rcnn', num_classes=2, device=None, log_frequency=100, debug=True, train_dataset_limit=None, log_to_file=False):
         self.model_name = model_name
         self.device = device if device else ('cuda' if torch.cuda.is_available() else 'cpu')
         self.num_classes = num_classes
         self.log_frequency = log_frequency
         self.debug = debug
         self.train_dataset_limit = train_dataset_limit
+        self.log_to_file = log_to_file
+        self.logger = None
         self.model = self._load_model()
         self.model = self.model.to(self.device)
         
@@ -33,6 +37,70 @@ class ModelTrainer:
             print(f"Model Architecture:")
             print(self.model)
             print(f"Model Device: {self.device}")
+
+    def _setup_logger(self, save_dir):
+        """
+        设置日志记录器
+        
+        Args:
+            save_dir (str): 保存日志的目录
+        """
+        if not self.log_to_file:
+            return
+            
+        # 创建日志目录
+        log_dir = os.path.join(save_dir, 'logs')
+        os.makedirs(log_dir, exist_ok=True)
+        
+        # 创建日志文件名，包含时间戳
+        timestamp = datetime.datetime.now().strftime('%Y%m%d_%H%M%S')
+        log_file = os.path.join(log_dir, f'training_log_{timestamp}.txt')
+        
+        # 配置日志记录器
+        self.logger = logging.getLogger('model_trainer')
+        self.logger.setLevel(logging.INFO)
+        
+        # 添加文件处理器，指定 UTF-8 编码
+        file_handler = logging.FileHandler(log_file, encoding='utf-8')
+        file_handler.setLevel(logging.INFO)
+        
+        # 设置日志格式
+        formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
+        file_handler.setFormatter(formatter)
+        
+        # 清除之前的handlers，避免重复日志
+        if self.logger.handlers:
+            self.logger.handlers.clear()
+        
+        # 添加处理器到日志记录器
+        self.logger.addHandler(file_handler)
+        
+        self.logger.info(f"===== 训练开始于 {timestamp} =====")
+        self.logger.info(f"模型名称: {self.model_name}")
+        self.logger.info(f"设备: {self.device}")
+        self.logger.info(f"调试模式: {self.debug}")
+        
+        return log_file
+
+    def log_message(self, message, level='info'):
+        """
+        记录消息到日志文件
+        
+        Args:
+            message (str): 要记录的消息
+            level (str): 日志级别 ('info', 'warning', 'error', 'debug')
+        """
+        if not self.log_to_file or self.logger is None:
+            return
+            
+        if level == 'info':
+            self.logger.info(message)
+        elif level == 'warning':
+            self.logger.warning(message)
+        elif level == 'error':
+            self.logger.error(message)
+        elif level == 'debug':
+            self.logger.debug(message)
 
     def set_log_frequency(self, log_frequency):
         """
@@ -48,9 +116,14 @@ class ModelTrainer:
         打印当前 GPU 使用状态
         """
         gpus = GPUtil.getGPUs()
+        gpu_info = []
         for gpu in gpus:
-            print(f"GPU ID: {gpu.id}, Name: {gpu.name}, Load: {gpu.load * 100:.2f}%, "
-                  f"Free Memory: {gpu.memoryFree} MB, Total Memory: {gpu.memoryTotal} MB")
+            info = f"GPU ID: {gpu.id}, Name: {gpu.name}, Load: {gpu.load * 100:.2f}%, Free Memory: {gpu.memoryFree} MB, Total Memory: {gpu.memoryTotal} MB"
+            print(info)
+            gpu_info.append(info)
+            
+        if self.log_to_file and self.logger:
+            self.logger.info("GPU状态: " + " | ".join(gpu_info))
 
     def _load_model(self):
         """
@@ -213,6 +286,9 @@ class ModelTrainer:
         if self.debug:
             print(f"\nStarting training epoch {epoch + 1}")
             print(f"Number of batches: {batch_count}")
+            
+        self.log_message(f"\n===== 开始训练 Epoch {epoch + 1}/{self.num_epochs} =====")
+        self.log_message(f"批次数量: {batch_count}")
 
         pbar = tqdm(train_loader, desc=f'Epoch {epoch + 1}/{self.num_epochs}', total=batch_count)
 
@@ -250,8 +326,9 @@ class ModelTrainer:
                 epoch_loss += loss_value
 
                 if (batch_idx + 1) % self.log_frequency == 0:
-                    print(f"Epoch [{epoch + 1}/{self.num_epochs}], "
-                        f"Batch [{batch_idx + 1}/{batch_count}], Loss: {loss_value:.4f}")
+                    log_msg = f"Epoch [{epoch + 1}/{self.num_epochs}], Batch [{batch_idx + 1}/{batch_count}], Loss: {loss_value:.4f}"
+                    print(log_msg)
+                    self.log_message(log_msg)
                     self.log_gpu_status()
 
                 pbar.set_postfix({
@@ -260,12 +337,13 @@ class ModelTrainer:
                 })
 
             except Exception as e:
-                print(f"\nError in training batch {batch_idx}:")
-                print(f"Error type: {type(e).__name__}")
-                print(f"Error message: {str(e)}")
+                error_msg = f"\nError in training batch {batch_idx}: {type(e).__name__} - {str(e)}"
+                print(error_msg)
+                self.log_message(error_msg, level='error')
                 if self.debug:
                     print("\nFull traceback:")
                     print(traceback.format_exc())
+                    self.log_message(traceback.format_exc(), level='error')
                 continue
 
         return epoch_loss / batch_count
@@ -400,6 +478,9 @@ class ModelTrainer:
         if self.debug:
             print(f"\nStarting validation epoch {epoch + 1}")
             print(f"Number of batches: {batch_count}")
+            
+        self.log_message(f"\n===== 开始验证 Epoch {epoch + 1}/{self.num_epochs} =====")
+        self.log_message(f"批次数量: {batch_count}")
 
         pbar = tqdm(val_loader, desc=f'Validation Epoch {epoch + 1}', total=batch_count)
 
@@ -461,9 +542,12 @@ class ModelTrainer:
                         continue
 
                 except Exception as e:
-                    print(f"\nError in validation batch {batch_idx}: {str(e)}")
+                    error_msg = f"\nError in validation batch {batch_idx}: {str(e)}"
+                    print(error_msg)
+                    self.log_message(error_msg, level='error')
                     if self.debug:
                         print(traceback.format_exc())
+                        self.log_message(traceback.format_exc(), level='error')
                     continue
 
             # 计算最终指标
@@ -472,15 +556,20 @@ class ModelTrainer:
             final_recall = correct_predictions / max(total_gt_objects, 1)
             final_f1 = 2 * (final_precision * final_recall) / max((final_precision + final_recall), 1e-6)
 
+            # 记录验证结果
+            validation_summary = f"\nValidation Summary - Epoch {epoch + 1}:"
+            validation_summary += f"\nAverage Loss: {final_loss:.4f}"
+            validation_summary += f"\nTotal GT Objects: {total_gt_objects}"
+            validation_summary += f"\nTotal Predictions: {total_pred_objects}"
+            validation_summary += f"\nCorrect Predictions: {correct_predictions}"
+            validation_summary += f"\nPrecision: {final_precision:.4f}"
+            validation_summary += f"\nRecall: {final_recall:.4f}"
+            validation_summary += f"\nF1 Score: {final_f1:.4f}"
+            
             if self.debug:
-                print(f"\nValidation Summary:")
-                print(f"Average Loss: {final_loss:.4f}")
-                print(f"Total GT Objects: {total_gt_objects}")
-                print(f"Total Predictions: {total_pred_objects}")
-                print(f"Correct Predictions: {correct_predictions}")
-                print(f"Precision: {final_precision:.4f}")
-                print(f"Recall: {final_recall:.4f}")
-                print(f"F1 Score: {final_f1:.4f}")
+                print(validation_summary)
+                
+            self.log_message(validation_summary)
 
             return final_loss, final_f1  # 返回F1分数作为主要评估指标
 
@@ -516,6 +605,20 @@ class ModelTrainer:
         print(f"- Weight decay: {weight_decay}")
         print(f"- Device: {self.device}")
         print(f"- Debug mode: {self.debug}")
+        print(f"- Log to file: {self.log_to_file}")
+        
+        # 设置日志记录器
+        log_file = self._setup_logger(save_dir)
+        if log_file:
+            print(f"Logs will be saved to: {log_file}")
+        
+        # 记录训练参数到日志
+        self.log_message("\n===== 训练参数 =====")
+        self.log_message(f"批大小: {batch_size}")
+        self.log_message(f"训练轮数: {num_epochs}")
+        self.log_message(f"学习率: {learning_rate}")
+        self.log_message(f"动量: {momentum}")
+        self.log_message(f"权重衰减: {weight_decay}")
 
         self.num_epochs = num_epochs
 
@@ -523,6 +626,8 @@ class ModelTrainer:
         transform = None
 
         print("\nLoading datasets...")
+        self.log_message("\n===== 加载数据集 =====")
+        
         train_dataset = CustomDataset(image_dir=train_image_dir, 
                                     label_path=train_label_path, 
                                     transform=transform,
@@ -537,6 +642,9 @@ class ModelTrainer:
         
         print(f"Training dataset size: {len(train_dataset)}")
         print(f"Validation dataset size: {len(val_dataset)}")
+        
+        self.log_message(f"训练数据集大小: {len(train_dataset)}")
+        self.log_message(f"验证数据集大小: {len(val_dataset)}")
 
         if self.debug:
             print("\nChecking first few samples from datasets:")
@@ -568,6 +676,9 @@ class ModelTrainer:
         
         print(f"\nCheckpoints will be saved to: {save_dir}")
         print(f"Debug visualizations will be saved to: {debug_dir}")
+        
+        self.log_message(f"模型检查点保存路径: {save_dir}")
+        self.log_message(f"调试可视化保存路径: {debug_dir}")
 
         history = {
             'train_loss': [],
@@ -578,6 +689,7 @@ class ModelTrainer:
         }
 
         print("\nStarting training loop...")
+        self.log_message("\n===== 开始训练循环 =====")
         training_start_time = time.time()
 
         try:
@@ -603,9 +715,18 @@ class ModelTrainer:
                     'val_loss': val_loss,
                 }, checkpoint_path)
                 print(f"Model checkpoint saved at {checkpoint_path}")
+                self.log_message(f"模型检查点已保存至: {checkpoint_path}")
 
                 epoch_time = time.time() - epoch_start_time
                 print(f"Epoch {epoch + 1} completed in {epoch_time:.2f}s")
+                
+                # 记录每个epoch的结果
+                epoch_summary = f"\nEpoch {epoch + 1} 总结:"
+                epoch_summary += f"\n- 训练损失: {train_loss:.4f}"
+                epoch_summary += f"\n- 验证损失: {val_loss:.4f}"
+                epoch_summary += f"\n- 验证F1分数: {val_f1:.4f}"
+                epoch_summary += f"\n- 耗时: {epoch_time:.2f}s"
+                self.log_message(epoch_summary)
 
                 if self.debug:
                     print(f"\nEpoch {epoch + 1} Summary:")
@@ -634,38 +755,63 @@ class ModelTrainer:
                         plt.close()
                     except Exception as e:
                         print(f"Error plotting training progress: {str(e)}")
+                        self.log_message(f"绘制训练进度图时出错: {str(e)}", level='error')
 
         except KeyboardInterrupt:
             print("\nTraining interrupted by user")
+            self.log_message("\n训练被用户中断", level='warning')
         except Exception as e:
-            print(f"\nError during training:")
-            print(f"Error type: {type(e).__name__}")
-            print(f"Error message: {str(e)}")
+            error_msg = f"\nError during training: {type(e).__name__} - {str(e)}"
+            print(error_msg)
+            self.log_message(error_msg, level='error')
             if self.debug:
                 print("\nFull traceback:")
                 print(traceback.format_exc())
+                self.log_message(traceback.format_exc(), level='error')
             raise
         finally:
+            # 记录总训练时间
+            total_training_time = time.time() - training_start_time
+            print(f"\nTotal training time: {total_training_time:.2f}s")
+            self.log_message(f"\n总训练时间: {total_training_time:.2f}s")
+            
             try:
                 # 保存 PyTorch 模型（用于继续训练）
                 self.model = self.model.cpu()
                 final_model_path = os.path.join(save_dir, "model_final.pth")
                 torch.save(self.model.state_dict(), final_model_path)
                 print(f"\nPyTorch model saved at {final_model_path}")
+                self.log_message(f"最终PyTorch模型已保存至: {final_model_path}")
+                
+                # 保存训练历史记录
+                history_path = os.path.join(save_dir, "training_history.npy")
+                np.save(history_path, history)
+                print(f"Training history saved at {history_path}")
+                self.log_message(f"训练历史记录已保存至: {history_path}")
 
             except Exception as e:
-                print(f"\nError saving final model:")
-                print(f"Error type: {type(e).__name__}")
-                print(f"Error message: {str(e)}")
+                error_msg = f"\nError saving final model: {type(e).__name__} - {str(e)}"
+                print(error_msg)
+                self.log_message(error_msg, level='error')
                 if self.debug:
                     print("\nFull traceback:")
                     print(traceback.format_exc())
+                    self.log_message(traceback.format_exc(), level='error')
                 
-            #     # 导出 ONNX 模型（用于部署）
-            #     try:
-            #         # 清理 GPU 缓存（如果使用的是 GPU）
-            #         if torch.cuda.is_available():
-            #             torch.cuda.empty_cache()
-                    
-            #         onnx_path = os.path.join(save_dir, "model_final.onnx")
-            #         print("\
+            # 如果需要导出ONNX模型，可以取消下面的注释
+            # try:
+            #     # 清理 GPU 缓存（如果使用的是 GPU）
+            #     if torch.cuda.is_available():
+            #         torch.cuda.empty_cache()
+            #     
+            #     onnx_path = os.path.join(save_dir, "model_final.onnx")
+            #     dummy_input = torch.randn(1, 3, 800, 800) # 根据实际输入调整
+            #     torch.onnx.export(self.model, dummy_input, onnx_path, 
+            #                        export_params=True, opset_version=11, 
+            #                        do_constant_folding=True, 
+            #                        input_names=['input'], output_names=['output'])
+            #     print(f"\nONNX model saved at {onnx_path}")
+            #     self.log_message(f"ONNX模型已保存至: {onnx_path}")
+            # except Exception as e:
+            #     print(f"Error exporting ONNX model: {str(e)}")
+            #     self.log_message(f"导出ONNX模型时出错: {str(e)}", level='error')
