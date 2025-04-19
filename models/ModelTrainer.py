@@ -14,6 +14,8 @@ import onnx
 import torch.onnx
 from torchvision.ops import box_iou
 import traceback
+import matplotlib.pyplot as plt
+import numpy as np
 
 class ModelTrainer:
     def __init__(self, model_name='faster_rcnn', num_classes=2, device=None, log_frequency=100, debug=True, train_dataset_limit=None):
@@ -105,6 +107,103 @@ class ModelTrainer:
         print(f"\nCurrent GPU Status:")
         self.log_gpu_status()
         print(f"{'='*50}\n")
+        
+    def _visualize_batch(self, images, targets, predictions=None, phase="training", batch_idx=0):
+        """
+        可视化批次中的图像、真实框和预测框
+        """
+        if not self.debug:
+            return
+            
+        debug_dir = os.path.join("debug_output", phase)
+        os.makedirs(debug_dir, exist_ok=True)
+        
+        # 只可视化批次中的前2张图像
+        num_images = min(2, len(images))
+        
+        for i in range(num_images):
+            try:
+                # 获取图像张量（4通道）并转换为RGB进行可视化
+                img_tensor = images[i].cpu().clone()
+                
+                # 分离RGB通道和掩码通道
+                rgb_tensor = img_tensor[:3]
+                mask_tensor = img_tensor[3] if img_tensor.shape[0] > 3 else None
+                
+                # 反标准化RGB通道
+                for c in range(3):
+                    rgb_tensor[c] = rgb_tensor[c] * 0.5 + 0.5
+                
+                # 转换为numpy进行可视化
+                rgb_np = rgb_tensor.permute(1, 2, 0).numpy()
+                
+                # 创建图形
+                if predictions is not None and mask_tensor is not None:
+                    fig, axes = plt.subplots(1, 3, figsize=(15, 5))
+                elif mask_tensor is not None:
+                    fig, axes = plt.subplots(1, 2, figsize=(10, 5))
+                else:
+                    fig, ax = plt.subplots(1, 1, figsize=(8, 8))
+                    axes = [ax]
+                
+                # 显示RGB图像
+                axes[0].imshow(rgb_np)
+                axes[0].set_title(f"RGB Image")
+                axes[0].axis('off')
+                
+                # 显示掩码（如果有）
+                if mask_tensor is not None:
+                    mask_np = mask_tensor.numpy()
+                    axes[1].imshow(mask_np, cmap='gray')
+                    axes[1].set_title(f"Mask Channel")
+                    axes[1].axis('off')
+                
+                # 显示RGB图像和目标/预测框
+                if predictions is not None:
+                    if mask_tensor is not None:
+                        ax_idx = 2
+                    else:
+                        ax_idx = 1
+                    axes[ax_idx].imshow(rgb_np)
+                    axes[ax_idx].set_title(f"Detections")
+                    axes[ax_idx].axis('off')
+                    
+                    # 绘制真实框（蓝色）
+                    if 'boxes' in targets[i] and len(targets[i]['boxes']) > 0:
+                        boxes = targets[i]['boxes'].cpu().numpy()
+                        for box in boxes:
+                            x1, y1, x2, y2 = box
+                            width, height = x2-x1, y2-y1
+                            rect = plt.Rectangle((x1, y1), width, height, 
+                                              fill=False, edgecolor='blue', linewidth=2)
+                            axes[ax_idx].add_patch(rect)
+                            axes[ax_idx].text(x1, y1-5, 'GT', color='blue', fontsize=8,
+                                           bbox=dict(facecolor='white', alpha=0.7))
+                    
+                    # 绘制预测框（红色）
+                    if 'boxes' in predictions[i] and len(predictions[i]['boxes']) > 0:
+                        pred_boxes = predictions[i]['boxes'].cpu().numpy()
+                        pred_scores = predictions[i]['scores'].cpu().numpy()
+                        
+                        for box, score in zip(pred_boxes, pred_scores):
+                            if score > 0.3:  # 只显示置信度较高的预测
+                                x1, y1, x2, y2 = box
+                                width, height = x2-x1, y2-y1
+                                rect = plt.Rectangle((x1, y1), width, height, 
+                                                  fill=False, edgecolor='red', linewidth=2)
+                                axes[ax_idx].add_patch(rect)
+                                axes[ax_idx].text(x1, y1-5, f'{score:.2f}', 
+                                               color='red', fontsize=8, 
+                                               bbox=dict(facecolor='white', alpha=0.7))
+                
+                # 保存图像
+                plt.tight_layout()
+                plt.savefig(os.path.join(debug_dir, f"batch_{batch_idx}_img_{i}.png"))
+                plt.close(fig)
+                
+            except Exception as e:
+                print(f"Error visualizing image {i}: {str(e)}")
+                continue
 
     def _train_one_epoch(self, train_loader, optimizer, epoch):
         self.model.train()
@@ -131,6 +230,8 @@ class ModelTrainer:
 
                 if self.debug and batch_idx % self.log_frequency == 0:
                     self._print_debug_info("Training", batch_idx, images, targets)
+                    # 添加可视化函数调用
+                    self._visualize_batch(images, targets, phase="training", batch_idx=batch_idx)
 
                 optimizer.zero_grad()
                 loss_dict = self.model(images, targets)
@@ -232,9 +333,9 @@ class ModelTrainer:
             gt_labels = gt_labels.to(self.device)
             pred_scores = pred_scores.to(self.device)
             
-            # 设置阈值
-            IOU_THRESHOLD = 0.5
-            SCORE_THRESHOLD = 0.5
+            # 设置阈值 - 降低阈值以提高召回率
+            IOU_THRESHOLD = 0.4  # 降低IoU阈值
+            SCORE_THRESHOLD = 0.3  # 降低分数阈值
             
             # 只考虑置信度高于阈值的预测框
             high_conf_mask = pred_scores > SCORE_THRESHOLD
@@ -315,6 +416,10 @@ class ModelTrainer:
                     try:
                         # 获取预测结果
                         predictions = self.model(images)
+                        
+                        # 添加可视化函数调用
+                        if self.debug and batch_idx % self.log_frequency == 0:
+                            self._visualize_batch(images, targets, predictions, phase="validation", batch_idx=batch_idx)
                         
                         # 计算损失
                         self.model.train()
@@ -400,7 +505,7 @@ class ModelTrainer:
         return loss_dict
 
     def train(self, train_image_dir, val_image_dir, train_label_path, val_label_path,
-            batch_size=2, num_epochs=10, learning_rate=0.005, momentum=0.9, 
+            batch_size=2, num_epochs=10, learning_rate=0.001, momentum=0.9, 
             weight_decay=0.0005, save_dir="models/checkpoints/"):
         print("\nInitializing training...")
         print(f"Training with following parameters:")
@@ -414,18 +519,18 @@ class ModelTrainer:
 
         self.num_epochs = num_epochs
 
-        transform = transforms.Compose([
-            transforms.ToTensor(),
-            transforms.Normalize(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5])
-        ])
+        # 不使用transform，因为数据已经预处理过
+        transform = None
 
         print("\nLoading datasets...")
         train_dataset = CustomDataset(image_dir=train_image_dir, 
                                     label_path=train_label_path, 
-                                    transform=transform)
+                                    transform=transform,
+                                    debug=self.debug)
         val_dataset = CustomDataset(image_dir=val_image_dir, 
                                 label_path=val_label_path, 
-                                transform=transform)
+                                transform=transform,
+                                debug=self.debug)
         
         if self.train_dataset_limit is not None:
             train_dataset = torch.utils.data.Subset(train_dataset, range(self.train_dataset_limit))
@@ -450,13 +555,26 @@ class ModelTrainer:
 
         optimizer = torch.optim.SGD(self.model.parameters(), lr=learning_rate, 
                                   momentum=momentum, weight_decay=weight_decay)
+                                  
+        # 添加学习率调度器
+        scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
+            optimizer, mode='max', factor=0.5, patience=2, verbose=True
+        )
 
         os.makedirs(save_dir, exist_ok=True)
+        # 创建调试输出目录
+        debug_dir = os.path.join("debug_output")
+        os.makedirs(debug_dir, exist_ok=True)
+        
         print(f"\nCheckpoints will be saved to: {save_dir}")
+        print(f"Debug visualizations will be saved to: {debug_dir}")
 
         history = {
             'train_loss': [],
-            'val_loss': []
+            'val_loss': [],
+            'val_f1': [],
+            'precision': [],
+            'recall': []
         }
 
         print("\nStarting training loop...")
@@ -469,9 +587,13 @@ class ModelTrainer:
                 train_loss = self._train_one_epoch(train_loader, optimizer, epoch)
                 history['train_loss'].append(train_loss)
                 
-                val_loss = self._validate_one_epoch(val_loader, epoch)
+                val_loss, val_f1 = self._validate_one_epoch(val_loader, epoch)
                 history['val_loss'].append(val_loss)
+                history['val_f1'].append(val_f1)
 
+                # 根据F1分数调整学习率
+                scheduler.step(val_f1)
+                
                 checkpoint_path = os.path.join(save_dir, f"model_epoch_{epoch + 1}.pth")
                 torch.save({
                     'epoch': epoch + 1,
@@ -489,6 +611,29 @@ class ModelTrainer:
                     print(f"\nEpoch {epoch + 1} Summary:")
                     print(f"Training Loss: {train_loss:.4f}")
                     print(f"Validation Loss: {val_loss:.4f}")
+                    print(f"Validation F1: {val_f1:.4f}")
+                    
+                # 可视化训练进程
+                if self.debug and epoch > 0:
+                    try:
+                        plt.figure(figsize=(12, 4))
+                        
+                        plt.subplot(1, 2, 1)
+                        plt.plot(history['train_loss'], label='Train Loss')
+                        plt.plot(history['val_loss'], label='Val Loss')
+                        plt.legend()
+                        plt.title('Loss Curves')
+                        
+                        plt.subplot(1, 2, 2)
+                        plt.plot(history['val_f1'], label='F1 Score')
+                        plt.legend()
+                        plt.title('F1 Score')
+                        
+                        plt.tight_layout()
+                        plt.savefig(os.path.join(debug_dir, f"training_progress_epoch_{epoch+1}.png"))
+                        plt.close()
+                    except Exception as e:
+                        print(f"Error plotting training progress: {str(e)}")
 
         except KeyboardInterrupt:
             print("\nTraining interrupted by user")
@@ -507,6 +652,14 @@ class ModelTrainer:
                 final_model_path = os.path.join(save_dir, "model_final.pth")
                 torch.save(self.model.state_dict(), final_model_path)
                 print(f"\nPyTorch model saved at {final_model_path}")
+
+            except Exception as e:
+                print(f"\nError saving final model:")
+                print(f"Error type: {type(e).__name__}")
+                print(f"Error message: {str(e)}")
+                if self.debug:
+                    print("\nFull traceback:")
+                    print(traceback.format_exc())
                 
             #     # 导出 ONNX 模型（用于部署）
             #     try:
@@ -515,152 +668,4 @@ class ModelTrainer:
             #             torch.cuda.empty_cache()
                     
             #         onnx_path = os.path.join(save_dir, "model_final.onnx")
-            #         print("\nStarting ONNX export...")
-            #         self.export_model(self.model, None, onnx_path)
-            #         print("ONNX export completed successfully!")
-                    
-            #     except Exception as export_error:
-            #         print(f"\nWarning: Failed to export ONNX model:")
-            #         print(f"Error type: {type(export_error).__name__}")
-            #         print(f"Error message: {str(export_error)}")
-            #         if self.debug:
-            #             print("\nFull export error traceback:")
-            #             print(traceback.format_exc())
-                
-            #     total_time = time.time() - training_start_time
-            #     print(f"\nTraining completed in {total_time:.2f}s")
-
-            #     return history
-            
-            except Exception as e:
-                print(f"\nError during finalization:")
-                print(f"Error type: {type(e).__name__}")
-                print(f"Error message: {str(e)}")
-                if self.debug:
-                    print("\nFull traceback:")
-                    print(traceback.format_exc())
-                raise
-    def _export_transform(self, images_batch):
-        """
-        转换输入格式，从批次张量转换为张量列表
-        """
-        if isinstance(images_batch, torch.Tensor):
-            if images_batch.ndim == 4:  # [B, C, H, W]
-                return [img for img in images_batch]
-        return images_batch
-
-    def export_model(self, model, sample_input, save_path):
-        """
-        将模型导出为 ONNX 格式，使用 JIT trace 来处理 Faster R-CNN
-        
-        Args:
-            model: 要导出的模型
-            sample_input: 样例输入
-            save_path: 保存路径
-        """
-        try:
-            # 确保模型处于评估模式
-            model.eval()
-            
-            # 确保模型在CPU上
-            model = model.to('cpu')
-            
-            class FasterRCNNWrapper(torch.nn.Module):
-                def __init__(self, model):
-                    super(FasterRCNNWrapper, self).__init__()
-                    self.model = model
-                    self.model.eval()
-
-                def forward(self, images):
-                    # 预处理输入
-                    if isinstance(images, torch.Tensor):
-                        if images.dim() == 4:  # [batch_size, channels, height, width]
-                            images = [img for img in images]  # 转换为图像列表
-                        else:  # [channels, height, width]
-                            images = [images]  # 单张图像转换为列表
-                    
-                    # 使用 no_grad 来确保不计算梯度
-                    with torch.no_grad():
-                        # 获取模型预测结果
-                        detections = self.model(images)
-                        
-                        if len(detections) == 0:
-                            return (
-                                torch.zeros((0, 4), dtype=torch.float32),
-                                torch.zeros((0,), dtype=torch.int64),
-                                torch.zeros((0,), dtype=torch.float32)
-                            )
-                        
-                        # 获取第一个预测结果（因为我们每次只处理一张图片）
-                        detection = detections[0]
-                        
-                        # 提取预测框、标签和分数
-                        boxes = detection.get('boxes', torch.zeros((0, 4), dtype=torch.float32))
-                        labels = detection.get('labels', torch.zeros((0,), dtype=torch.int64))
-                        scores = detection.get('scores', torch.zeros((0,), dtype=torch.float32))
-                        
-                        # 确保所有输出都是张量
-                        if not isinstance(boxes, torch.Tensor):
-                            boxes = torch.tensor(boxes)
-                        if not isinstance(labels, torch.Tensor):
-                            labels = torch.tensor(labels)
-                        if not isinstance(scores, torch.Tensor):
-                            scores = torch.tensor(scores)
-                        
-                        return boxes, labels, scores
-
-            # 创建模型包装器
-            wrapped_model = FasterRCNNWrapper(model)
-            
-            # 创建示例输入
-            dummy_input = torch.randn(4, 800, 800) #
-            
-            # 使用 JIT trace 来捕获模型
-            traced_model = torch.jit.trace(wrapped_model, dummy_input, strict=False)
-            
-            # 动态轴配置
-            dynamic_axes = {
-                'input': {
-                    1: 'height',
-                    2: 'width'
-                },
-                'boxes': {0: 'num_detections'},
-                'labels': {0: 'num_detections'},
-                'scores': {0: 'num_detections'}
-            }
-            
-            # 导出为 ONNX
-            torch.onnx.export(
-                traced_model,               # 使用 traced 模型
-                dummy_input,                # 示例输入
-                save_path,                  # 保存路径
-                export_params=True,         # 导出模型参数
-                opset_version=11,           # ONNX 算子集版本
-                do_constant_folding=True,   # 常量折叠优化
-                input_names=['input'],      # 输入名称
-                output_names=[              # 输出名称
-                    'boxes',
-                    'labels', 
-                    'scores'
-                ],
-                dynamic_axes=dynamic_axes,  # 动态轴
-                verbose=self.debug
-            )
-            
-            if self.debug:
-                print(f"\nModel exported to ONNX format: {save_path}")
-                
-            # 验证导出的模型
-            onnx_model = onnx.load(save_path)
-            onnx.checker.check_model(onnx_model)
-            
-            if self.debug:
-                print("ONNX model checked successfully!")
-                
-        except Exception as e:
-            print(f"\nError exporting model to ONNX:")
-            print(f"Error type: {type(e).__name__}")
-            print(f"Error message: {str(e)}")
-            print("\nTraceback:")
-            import traceback
-            print(traceback.format_exc())
+            #         print("\
