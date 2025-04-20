@@ -13,3 +13,4 @@
 *.onnx
 *.onnx.pb
 *.onnx.pbtxt
+*.npy

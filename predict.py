@@ -8,7 +8,7 @@ from utils.data_preprocessing import DataPreprocessing
 
 # 创建正确的配置
 config = PredictionConfig(
-    confidence_threshold=0.1,
+    confidence_threshold=0.5,
     device='cuda' if torch.cuda.is_available() else 'cpu',
     batch_size=1,
     # 使用与模型定义一致的4通道标准化参数

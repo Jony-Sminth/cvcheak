@@ -185,3 +185,111 @@ Epoch 4 总结:
 2025-04-19 14:46:56,804 - INFO - Epoch [5/10], Batch [2000/2600], Loss: 0.0001
 2025-04-19 14:46:56,851 - INFO - GPU状态: GPU ID: 0, Name: NVIDIA GeForce RTX 4060 Laptop GPU, Load: 84.00%, Free Memory: 2643.0 MB, Total Memory: 8188.0 MB
 2025-04-19 14:46:57,195 - INFO - GPU状态: GPU ID: 0, Name: NVIDIA GeForce RTX 4060 Laptop GPU, Load: 80.00%, Free Memory: 2643.0 MB, Total Memory: 8188.0 MB
+2025-04-19 14:51:30,050 - INFO - Epoch [5/10], Batch [2500/2600], Loss: 0.0063
+2025-04-19 14:51:30,086 - INFO - GPU状态: GPU ID: 0, Name: NVIDIA GeForce RTX 4060 Laptop GPU, Load: 94.00%, Free Memory: 2643.0 MB, Total Memory: 8188.0 MB
+2025-04-19 14:51:30,453 - INFO - GPU状态: GPU ID: 0, Name: NVIDIA GeForce RTX 4060 Laptop GPU, Load: 100.00%, Free Memory: 2643.0 MB, Total Memory: 8188.0 MB
+2025-04-19 14:52:30,094 - INFO - 
+===== 开始验证 Epoch 5/10 =====
+2025-04-19 14:52:30,094 - INFO - 批次数量: 650
+2025-04-19 14:58:17,344 - INFO - 
+Validation Summary - Epoch 5:
+Average Loss: 0.0097
+Total GT Objects: 1164
+Total Predictions: 1181
+Correct Predictions: 1164
+Precision: 0.9856
+Recall: 1.0000
+F1 Score: 0.9928
+2025-04-19 14:58:17,863 - INFO - 模型检查点已保存至: output/faster_rcnn\model_epoch_5.pth
+2025-04-19 14:58:17,864 - INFO - 
+Epoch 5 总结:
+- 训练损失: 0.0115
+- 验证损失: 0.0097
+- 验证F1分数: 0.9928
+- 耗时: 1770.31s
+2025-04-19 14:58:18,334 - INFO - 
+===== 开始训练 Epoch 6/10 =====
+2025-04-19 14:58:18,335 - INFO - 批次数量: 2600
+2025-04-19 14:58:28,171 - INFO - GPU状态: GPU ID: 0, Name: NVIDIA GeForce RTX 4060 Laptop GPU, Load: 17.00%, Free Memory: 2643.0 MB, Total Memory: 8188.0 MB
+2025-04-19 15:03:16,471 - INFO - Epoch [6/10], Batch [500/2600], Loss: 0.0038
+2025-04-19 15:03:16,536 - INFO - GPU状态: GPU ID: 0, Name: NVIDIA GeForce RTX 4060 Laptop GPU, Load: 85.00%, Free Memory: 2643.0 MB, Total Memory: 8188.0 MB
+2025-04-19 15:03:16,854 - INFO - GPU状态: GPU ID: 0, Name: NVIDIA GeForce RTX 4060 Laptop GPU, Load: 67.00%, Free Memory: 2643.0 MB, Total Memory: 8188.0 MB
+2025-04-19 15:07:56,185 - INFO - Epoch [6/10], Batch [1000/2600], Loss: 0.0209
+2025-04-19 15:07:56,231 - INFO - GPU状态: GPU ID: 0, Name: NVIDIA GeForce RTX 4060 Laptop GPU, Load: 84.00%, Free Memory: 2643.0 MB, Total Memory: 8188.0 MB
+2025-04-19 15:07:56,604 - INFO - GPU状态: GPU ID: 0, Name: NVIDIA GeForce RTX 4060 Laptop GPU, Load: 70.00%, Free Memory: 2643.0 MB, Total Memory: 8188.0 MB
+2025-04-19 15:12:53,539 - INFO - Epoch [6/10], Batch [1500/2600], Loss: 0.0029
+2025-04-19 15:12:53,587 - INFO - GPU状态: GPU ID: 0, Name: NVIDIA GeForce RTX 4060 Laptop GPU, Load: 83.00%, Free Memory: 2643.0 MB, Total Memory: 8188.0 MB
+2025-04-19 15:12:53,943 - INFO - GPU状态: GPU ID: 0, Name: NVIDIA GeForce RTX 4060 Laptop GPU, Load: 81.00%, Free Memory: 2643.0 MB, Total Memory: 8188.0 MB
+2025-04-19 15:17:31,557 - INFO - Epoch [6/10], Batch [2000/2600], Loss: 0.0585
+2025-04-19 15:17:31,612 - INFO - GPU状态: GPU ID: 0, Name: NVIDIA GeForce RTX 4060 Laptop GPU, Load: 73.00%, Free Memory: 2643.0 MB, Total Memory: 8188.0 MB
+2025-04-19 15:17:32,011 - INFO - GPU状态: GPU ID: 0, Name: NVIDIA GeForce RTX 4060 Laptop GPU, Load: 37.00%, Free Memory: 2643.0 MB, Total Memory: 8188.0 MB
+2025-04-19 15:22:40,724 - INFO - Epoch [6/10], Batch [2500/2600], Loss: 0.0025
+2025-04-19 15:22:40,770 - INFO - GPU状态: GPU ID: 0, Name: NVIDIA GeForce RTX 4060 Laptop GPU, Load: 84.00%, Free Memory: 2643.0 MB, Total Memory: 8188.0 MB
+2025-04-19 15:22:41,139 - INFO - GPU状态: GPU ID: 0, Name: NVIDIA GeForce RTX 4060 Laptop GPU, Load: 72.00%, Free Memory: 2643.0 MB, Total Memory: 8188.0 MB
+2025-04-19 15:23:42,880 - INFO - 
+===== 开始验证 Epoch 6/10 =====
+2025-04-19 15:23:42,880 - INFO - 批次数量: 650
+2025-04-19 15:29:53,547 - INFO - 
+Validation Summary - Epoch 6:
+Average Loss: 0.0101
+Total GT Objects: 1164
+Total Predictions: 1189
+Correct Predictions: 1164
+Precision: 0.9790
+Recall: 1.0000
+F1 Score: 0.9894
+2025-04-19 15:29:53,800 - INFO - 模型检查点已保存至: output/faster_rcnn\model_epoch_6.pth
+2025-04-19 15:29:53,800 - INFO - 
+Epoch 6 总结:
+- 训练损失: 0.0114
+- 验证损失: 0.0101
+- 验证F1分数: 0.9894
+- 耗时: 1895.47s
+2025-04-19 15:29:53,973 - INFO - 
+===== 开始训练 Epoch 7/10 =====
+2025-04-19 15:29:53,973 - INFO - 批次数量: 2600
+2025-04-19 15:30:03,807 - INFO - GPU状态: GPU ID: 0, Name: NVIDIA GeForce RTX 4060 Laptop GPU, Load: 1.00%, Free Memory: 2643.0 MB, Total Memory: 8188.0 MB
+2025-04-19 15:34:56,171 - INFO - Epoch [7/10], Batch [500/2600], Loss: 0.0030
+2025-04-19 15:34:56,289 - INFO - GPU状态: GPU ID: 0, Name: NVIDIA GeForce RTX 4060 Laptop GPU, Load: 58.00%, Free Memory: 2643.0 MB, Total Memory: 8188.0 MB
+2025-04-19 15:34:56,576 - INFO - GPU状态: GPU ID: 0, Name: NVIDIA GeForce RTX 4060 Laptop GPU, Load: 100.00%, Free Memory: 2643.0 MB, Total Memory: 8188.0 MB
+2025-04-19 15:39:28,680 - INFO - Epoch [7/10], Batch [1000/2600], Loss: 0.0154
+2025-04-19 15:39:28,730 - INFO - GPU状态: GPU ID: 0, Name: NVIDIA GeForce RTX 4060 Laptop GPU, Load: 83.00%, Free Memory: 2643.0 MB, Total Memory: 8188.0 MB
+2025-04-19 15:39:29,071 - INFO - GPU状态: GPU ID: 0, Name: NVIDIA GeForce RTX 4060 Laptop GPU, Load: 100.00%, Free Memory: 2643.0 MB, Total Memory: 8188.0 MB
+2025-04-19 15:44:28,753 - INFO - Epoch [7/10], Batch [1500/2600], Loss: 0.0070
+2025-04-19 15:44:28,789 - INFO - GPU状态: GPU ID: 0, Name: NVIDIA GeForce RTX 4060 Laptop GPU, Load: 83.00%, Free Memory: 2643.0 MB, Total Memory: 8188.0 MB
+2025-04-19 15:44:29,131 - INFO - GPU状态: GPU ID: 0, Name: NVIDIA GeForce RTX 4060 Laptop GPU, Load: 100.00%, Free Memory: 2643.0 MB, Total Memory: 8188.0 MB
+2025-04-19 15:49:16,648 - INFO - Epoch [7/10], Batch [2000/2600], Loss: 0.0685
+2025-04-19 15:49:16,728 - INFO - GPU状态: GPU ID: 0, Name: NVIDIA GeForce RTX 4060 Laptop GPU, Load: 80.00%, Free Memory: 2643.0 MB, Total Memory: 8188.0 MB
+2025-04-19 15:49:17,086 - INFO - GPU状态: GPU ID: 0, Name: NVIDIA GeForce RTX 4060 Laptop GPU, Load: 93.00%, Free Memory: 2643.0 MB, Total Memory: 8188.0 MB
+2025-04-19 15:53:49,605 - INFO - Epoch [7/10], Batch [2500/2600], Loss: 0.0162
+2025-04-19 15:53:49,654 - INFO - GPU状态: GPU ID: 0, Name: NVIDIA GeForce RTX 4060 Laptop GPU, Load: 82.00%, Free Memory: 2643.0 MB, Total Memory: 8188.0 MB
+2025-04-19 15:53:49,994 - INFO - GPU状态: GPU ID: 0, Name: NVIDIA GeForce RTX 4060 Laptop GPU, Load: 100.00%, Free Memory: 2643.0 MB, Total Memory: 8188.0 MB
+2025-04-19 15:54:43,568 - INFO - 
+===== 开始验证 Epoch 7/10 =====
+2025-04-19 15:54:43,568 - INFO - 批次数量: 650
+2025-04-19 16:00:13,035 - INFO - 
+Validation Summary - Epoch 7:
+Average Loss: 0.0100
+Total GT Objects: 1164
+Total Predictions: 7845
+Correct Predictions: 1164
+Precision: 0.1484
+Recall: 1.0000
+F1 Score: 0.2584
+2025-04-19 16:00:13,282 - INFO - 模型检查点已保存至: output/faster_rcnn\model_epoch_7.pth
+2025-04-19 16:00:13,282 - INFO - 
+Epoch 7 总结:
+- 训练损失: 0.0106
+- 验证损失: 0.0100
+- 验证F1分数: 0.2584
+- 耗时: 1819.31s
+2025-04-19 16:00:13,567 - INFO - 
+===== 开始训练 Epoch 8/10 =====
+2025-04-19 16:00:13,567 - INFO - 批次数量: 2600
+2025-04-19 16:00:23,671 - INFO - GPU状态: GPU ID: 0, Name: NVIDIA GeForce RTX 4060 Laptop GPU, Load: 0.00%, Free Memory: 2469.0 MB, Total Memory: 8188.0 MB
+2025-04-19 16:00:44,147 - WARNING - 
+训练被用户中断
+2025-04-19 16:00:44,148 - INFO - 
+总训练时间: 12384.43s
+2025-04-19 16:00:44,496 - INFO - 最终PyTorch模型已保存至: output/faster_rcnn\model_final.pth
+2025-04-19 16:00:44,497 - INFO - 训练历史记录已保存至: output/faster_rcnn\training_history.npy

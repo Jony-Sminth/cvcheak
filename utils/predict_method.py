@@ -18,7 +18,7 @@ from data_preprocessing import DataPreprocessing
 @dataclass
 class PredictionConfig:
     """预测配置类，用于存储预测相关的参数"""
-    confidence_threshold: float = 0.3  # 降低默认阈值以提高检测率
+    confidence_threshold: float = 0.5  # 降低默认阈值以提高检测率
     device: Optional[str] = None
     batch_size: int = 1
     num_classes: int = 2
@@ -192,7 +192,7 @@ class TamperingPredictor:
         # 如果有多个框
         if len(boxes) > 1:
             # 应用NMS，设置IoU阈值
-            keep_indices = nms(boxes, scores, iou_threshold=0.3)
+            keep_indices = nms(boxes, scores, iou_threshold=0.5)
             boxes = boxes[keep_indices]
             scores = scores[keep_indices]
         
@@ -352,7 +352,7 @@ class TamperingPredictor:
 
 def demo_usage():
     config = PredictionConfig(
-        confidence_threshold=0.725,
+        confidence_threshold=0.5,
         device='cuda' if torch.cuda.is_available() else 'cpu',
         batch_size=1,
         # 使用与模型定义一致的4通道标准化参数

@@ -31,6 +31,9 @@ class ModelTrainer:
         self.logger = None
         self.model = self._load_model()
         self.model = self.model.to(self.device)
+
+        self.history = {'train_loss': [], 'val_loss': [], 'val_f1': [], 'precision': [], 'recall': [], 'mAP': [], 'mAR': []}
+    
         
         if self.debug:
             print(f"\nDebug Mode Enabled")
@@ -188,7 +191,7 @@ class ModelTrainer:
         if not self.debug:
             return
             
-        debug_dir = os.path.join("debug_output", phase)
+        debug_dir = os.path.join("debug_output/new_debug", phase)
         os.makedirs(debug_dir, exist_ok=True)
         
         # 只可视化批次中的前2张图像
@@ -411,9 +414,9 @@ class ModelTrainer:
             gt_labels = gt_labels.to(self.device)
             pred_scores = pred_scores.to(self.device)
             
-            # 设置阈值 - 降低阈值以提高召回率
-            IOU_THRESHOLD = 0.4  # 降低IoU阈值
-            SCORE_THRESHOLD = 0.3  # 降低分数阈值
+            # 设置阈值 - 使用更严格的IOU阈值
+            IOU_THRESHOLD = 0.5  # 提高IoU阈值，使评估更严格
+            SCORE_THRESHOLD = 0.5  # 分数阈值保持不变
             
             # 只考虑置信度高于阈值的预测框
             high_conf_mask = pred_scores > SCORE_THRESHOLD
@@ -456,6 +459,7 @@ class ModelTrainer:
                 print(f"GT Labels: {gt_labels}")
                 print(f"Pred Labels: {pred_labels}")
                 print(f"Best IoUs: {ious.max(dim=0)[0]}")
+                print(f"Using IOU threshold: {IOU_THRESHOLD}")
             
             return correct_count
             
@@ -464,6 +468,129 @@ class ModelTrainer:
             print(traceback.format_exc())
             return 0
 
+    def _compute_ap_and_ar(self, all_predictions, all_targets, iou_thresholds=[0.5, 0.55, 0.6, 0.65, 0.7, 0.75, 0.8, 0.85, 0.9, 0.95]):
+        """
+        计算平均精度(AP)和平均召回率(AR)
+        
+        Args:
+            all_predictions: 所有预测结果的列表
+            all_targets: 所有真实目标的列表
+            iou_thresholds: 用于计算AP和AR的IOU阈值列表
+        
+        Returns:
+            ap: 平均精度
+            ar: 平均召回率
+        """
+        aps = []
+        ars = []
+        
+        # 对每个IOU阈值计算AP和AR
+        for iou_threshold in iou_thresholds:
+            # 收集所有预测的置信度和是否为TP
+            all_scores = []
+            all_tp = []
+            
+            total_gt = 0
+            
+            # 处理每张图像
+            for predictions, targets in zip(all_predictions, all_targets):
+                # 获取预测框、分数和标签
+                pred_boxes = predictions['boxes'].cpu()
+                pred_scores = predictions['scores'].cpu()
+                pred_labels = predictions['labels'].cpu()
+                
+                # 获取真实框和标签
+                gt_boxes = targets['boxes'].cpu()
+                gt_labels = targets['labels'].cpu()
+                
+                total_gt += len(gt_boxes)
+                
+                # 如果没有预测或者没有真实目标，跳过
+                if len(pred_boxes) == 0 or len(gt_boxes) == 0:
+                    continue
+                    
+                # 按置信度降序排序预测
+                sorted_indices = torch.argsort(pred_scores, descending=True)
+                pred_boxes = pred_boxes[sorted_indices]
+                pred_scores = pred_scores[sorted_indices]
+                pred_labels = pred_labels[sorted_indices]
+                
+                # 记录每个真实框是否被匹配
+                gt_matched = torch.zeros(len(gt_boxes), dtype=torch.bool)
+                
+                # 对每个预测框计算IOU并确定是否为TP
+                for i, (box, score, label) in enumerate(zip(pred_boxes, pred_scores, pred_labels)):
+                    # 只考虑与预测相同类别的真实框
+                    same_class_mask = gt_labels == label
+                    if not same_class_mask.any():
+                        all_scores.append(score.item())
+                        all_tp.append(0)  # 没有匹配的真实框，为FP
+                        continue
+                    
+                    # 计算与相同类别的真实框的IOU
+                    class_gt_boxes = gt_boxes[same_class_mask]
+                    class_gt_indices = torch.where(same_class_mask)[0]
+                    
+                    if len(class_gt_boxes) > 0:
+                        # 计算当前预测框与所有相同类别的真实框的IOU
+                        ious = box_iou(box.unsqueeze(0), class_gt_boxes)[0]
+                        max_iou, max_idx = ious.max(dim=0)
+                        max_gt_idx = class_gt_indices[max_idx]
+                        
+                        # 如果IOU大于阈值且该真实框未被匹配
+                        if max_iou >= iou_threshold and not gt_matched[max_gt_idx]:
+                            gt_matched[max_gt_idx] = True
+                            all_scores.append(score.item())
+                            all_tp.append(1)  # 是TP
+                        else:
+                            all_scores.append(score.item())
+                            all_tp.append(0)  # 是FP
+                    else:
+                        all_scores.append(score.item())
+                        all_tp.append(0)  # 是FP
+            
+            # 如果没有预测或者没有真实目标，AP和AR都设为0
+            if len(all_scores) == 0 or total_gt == 0:
+                aps.append(0)
+                ars.append(0)
+                continue
+            
+            # 将列表转换为numpy数组
+            scores = np.array(all_scores)
+            tp = np.array(all_tp)
+            
+            # 按置信度降序排序
+            sort_indices = np.argsort(scores)[::-1]
+            tp = tp[sort_indices]
+            
+            # 计算累积TP和FP
+            cumulative_tp = np.cumsum(tp)
+            cumulative_fp = np.cumsum(1 - tp)
+            
+            # 计算精度和召回率
+            precision = cumulative_tp / (cumulative_tp + cumulative_fp + 1e-10)
+            recall = cumulative_tp / (total_gt + 1e-10)
+            
+            # 计算AP (使用11点插值法)
+            ap = 0
+            for t in np.arange(0, 1.1, 0.1):
+                if np.sum(recall >= t) == 0:
+                    p = 0
+                else:
+                    p = np.max(precision[recall >= t])
+                ap += p / 11
+            
+            # 计算AR (最大召回率)
+            ar = np.max(recall) if len(recall) > 0 else 0
+            
+            aps.append(ap)
+            ars.append(ar)
+        
+        # 计算平均值
+        mAP = np.mean(aps)
+        mAR = np.mean(ars)
+        
+        return mAP, mAR
     def _validate_one_epoch(self, val_loader, epoch):
         """
         验证一个epoch，包含更详细的评估指标
@@ -474,6 +601,10 @@ class ModelTrainer:
         total_gt_objects = 0     # 真实框总数
         total_pred_objects = 0   # 预测框总数
         correct_predictions = 0   # 正确预测数
+        
+        # 收集所有预测和真实目标用于计算AP和AR
+        all_predictions = []
+        all_targets = []
         
         if self.debug:
             print(f"\nStarting validation epoch {epoch + 1}")
@@ -497,6 +628,10 @@ class ModelTrainer:
                     try:
                         # 获取预测结果
                         predictions = self.model(images)
+                        
+                        # 收集预测和真实目标用于AP和AR计算
+                        all_predictions.extend(predictions)
+                        all_targets.extend([{k: v.clone() for k, v in t.items()} for t in targets])
                         
                         # 添加可视化函数调用
                         if self.debug and batch_idx % self.log_frequency == 0:
@@ -556,6 +691,25 @@ class ModelTrainer:
             final_recall = correct_predictions / max(total_gt_objects, 1)
             final_f1 = 2 * (final_precision * final_recall) / max((final_precision + final_recall), 1e-6)
 
+            # 计算AP和AR
+            try:
+                mAP, mAR = self._compute_ap_and_ar(all_predictions, all_targets)
+                
+                # 添加到历史记录中用于绘图
+                if 'mAP' not in self.history:
+                    self.history['mAP'] = []
+                    self.history['mAR'] = []
+                self.history['mAP'].append(mAP)
+                self.history['mAR'].append(mAR)
+                
+            except Exception as e:
+                error_msg = f"计算AP和AR时出错: {str(e)}"
+                print(error_msg)
+                self.log_message(error_msg, level='error')
+                if self.debug:
+                    print(traceback.format_exc())
+                mAP, mAR = 0.0, 0.0
+
             # 记录验证结果
             validation_summary = f"\nValidation Summary - Epoch {epoch + 1}:"
             validation_summary += f"\nAverage Loss: {final_loss:.4f}"
@@ -565,6 +719,8 @@ class ModelTrainer:
             validation_summary += f"\nPrecision: {final_precision:.4f}"
             validation_summary += f"\nRecall: {final_recall:.4f}"
             validation_summary += f"\nF1 Score: {final_f1:.4f}"
+            validation_summary += f"\nMean Average Precision (mAP): {mAP:.4f}"
+            validation_summary += f"\nMean Average Recall (mAR): {mAR:.4f}"
             
             if self.debug:
                 print(validation_summary)
@@ -572,7 +728,6 @@ class ModelTrainer:
             self.log_message(validation_summary)
 
             return final_loss, final_f1  # 返回F1分数作为主要评估指标
-
     def _handle_irregular_loss_dict(self, loss_dict):
         losses = 0
         loss_value = 0
@@ -735,20 +890,46 @@ class ModelTrainer:
                     print(f"Validation F1: {val_f1:.4f}")
                     
                 # 可视化训练进程
+                # 可视化训练进程
                 if self.debug and epoch > 0:
                     try:
-                        plt.figure(figsize=(12, 4))
+                        plt.figure(figsize=(15, 10))
                         
-                        plt.subplot(1, 2, 1)
+                        # 第一行图表
+                        plt.subplot(2, 2, 1)
                         plt.plot(history['train_loss'], label='Train Loss')
                         plt.plot(history['val_loss'], label='Val Loss')
                         plt.legend()
                         plt.title('Loss Curves')
+                        plt.xlabel('Epoch')
+                        plt.ylabel('Loss')
                         
-                        plt.subplot(1, 2, 2)
+                        plt.subplot(2, 2, 2)
                         plt.plot(history['val_f1'], label='F1 Score')
                         plt.legend()
                         plt.title('F1 Score')
+                        plt.xlabel('Epoch')
+                        plt.ylabel('F1')
+                        
+                        # 第二行图表 - AP和AR
+                        if 'mAP' in history and len(history['mAP']) > 0:
+                            plt.subplot(2, 2, 3)
+                            plt.plot(history['mAP'], label='mAP', marker='o')
+                            plt.plot(history['mAR'], label='mAR', marker='x')
+                            plt.legend()
+                            plt.title('mAP and mAR')
+                            plt.xlabel('Epoch')
+                            plt.ylabel('Score')
+                            
+                            # Precision和Recall
+                            plt.subplot(2, 2, 4)
+                            if 'precision' in history and 'recall' in history:
+                                plt.plot(history['precision'], label='Precision', marker='o')
+                                plt.plot(history['recall'], label='Recall', marker='x')
+                                plt.legend()
+                                plt.title('Precision and Recall')
+                                plt.xlabel('Epoch')
+                                plt.ylabel('Score')
                         
                         plt.tight_layout()
                         plt.savefig(os.path.join(debug_dir, f"training_progress_epoch_{epoch+1}.png"))
@@ -756,7 +937,6 @@ class ModelTrainer:
                     except Exception as e:
                         print(f"Error plotting training progress: {str(e)}")
                         self.log_message(f"绘制训练进度图时出错: {str(e)}", level='error')
-
         except KeyboardInterrupt:
             print("\nTraining interrupted by user")
             self.log_message("\n训练被用户中断", level='warning')
